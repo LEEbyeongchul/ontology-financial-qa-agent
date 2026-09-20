@@ -1,0 +1,856 @@
+# overseas_etfs — 사람의 판단을 담는 파일
+# 기계적 사실은 *.auto.yaml 에 있습니다. 여기엔 판정과 규칙만 씁니다.
+# 런타임 가드레일이 이 파일을 읽습니다.
+#
+# 범위: 2단계(결측 판정 · 컬럼 판단 · 쿼리 규칙).
+#   개체·관계 매핑은 4단계(워크샵 후). → docs/eda/overseas_etfs_notes.md §F 참조.
+#   ⚠️ 국내ETF(domestic_etfs.yaml)와 비대칭이 큼 — 위험등급·기간수익률 컬럼 자체가 없음.
+#
+# 이력:
+#   2026-08-25  2차 데이터(8/24 배포 · 기준일 2026-08-22, 해외 8/23 KST) 기준 갱신.
+#               컬럼 구조 동일(49열) — 수치·판정만 갱신. 행 5,646→6,037 (pd_itm_no 기준 신규 391·소멸 0 — ISIN 기준 신규 399·변경 20. 옛 '신규 395·소멸 20=상폐' 는 2026-09-02 재대조로 폐기: 20건은 ISIN 만 바뀐 동일 티커).
+#               판정 뒤집힘: du_er_1d(전부 0→97.7% 유효) · cu_lev_fector(100% 결측→14.9% 유효, 부호 정상).
+#               상세: docs/DATA_V2_2026-08-24_impact.md §2.3·§6
+
+domain: overseas_etfs
+
+# ── 행의 낟알 (2026-08-18 감사 확정) ──
+row_grain:
+  구조: 행 = 상품 (pd_itm_no 완전 유일 — 6,037행 = 6,037 distinct · 2차 2026-08-22)
+  evidence_grade: A
+  note: >-
+    🔴 유일 키는 pd_itm_no **뿐이다.** pd_isin_cd·pd_lipper_id 는 각각 63종이 2개 상품에 걸려
+    (예: 같은 ISIN 이 OEUR.K/OEFA.K 두 티커에) 단독 조인 키로 쓰면 안 된다 (columns._identifier_dup).
+    1차 대비 신규 391건(pd_itm_no 기준; 157건은 7/11 이후 상장) · 소멸 0건 — ISIN 이 바뀐 20건(Tradr 2X Short NBIS 등)은 2차에도 티커가 있어 상폐가 아니다(2026-09-02 v1 대조).
+    시세 기준일 du_clpr_base_dt = 20260821 이 5,687건이나 20260609(14)·20260728(13) 등 구식 잔존 → 답변 시 기준일 병기.
+
+# ── 컬럼 한글명 49종 (schema_metadata 공란 대체) ──
+#   36종: 국내ETF schema Sheet1_Schema 에서 매핑 (공유 컬럼)
+#   13종: 해외ETF 전용 — 컬럼명 의미로 직접 확정
+# ✅ 검토(etf-dev/08-21): 13종 자체명명 전부 값 부합 확인 — repl_mthd=Optimized/Swap/Full/Other, isin=US+10자, cik/lipper=숫자ID, trd_ccy=USD, etn/inverse/tracking/match_yn=Y/N, clpr_src=경로문자열, *_base_dt=날짜. du_opr=시가는 [저가,고가] 정합 2차 99.98%(6,022/6,023 · 1차 99.77%=5,623/5,636). 정정 없음.
+column_korean_names:
+  # 식별자
+  pd_itm_no: 상품번호(티커)
+  pd_itm_no_ma: 상품번호_미래에셋
+  pd_isin_cd: ISIN코드                 # 해외전용
+  pd_lipper_id: Lipper식별자           # 해외전용(글로벌 펀드평가사)
+  pd_us_cik: 미국SEC등록번호(CIK)      # 해외전용
+  pd_nm: 상품명
+  pd_abrv_nm: 상품약어명
+  # 분류·속성
+  pd_grp_no: 상품군종류
+  wu_inv_ast_type: 투자자산군
+  wu_inv_rgn: 투자지역
+  wu_core_yn: 핵심ETF여부
+  cu_strtegy: 운용전략
+  cu_lev_fector: 배수
+  cu_base_index: 기초지수
+  cu_etn_yn: ETN여부                   # 해외전용
+  cu_inverse_short_yn: 인버스/숏여부   # 해외전용
+  cu_index_repl_mthd: 지수복제방법     # 해외전용(Optimized/Swap/Full)
+  cu_index_tracking_yn: 지수추종여부   # 해외전용
+  # 운용사·보수
+  cu_fund_mgmt_co: 운용사
+  cu_charge_rt: 총보수요율
+  # 시장·통화
+  pd_exg_mkt_cd: 거래소코드
+  pd_mkt_id: 상품거래시장코드
+  pd_curr_cd: 상품통화코드
+  pd_trd_ccy: 거래통화                 # 해외전용(전부 USD)
+  # 가격·시세
+  du_clpr: 종가
+  du_clpr_base_dt: 종가기준일          # 해외전용
+  du_clpr_src: 종가출처                # 해외전용
+  du_opr: 시가                         # 해외전용(국내는 du_lpr)
+  du_hpr: 고가
+  du_lpr: 저가
+  du_bpr: 기준가
+  du_last_nav: 최종NAV
+  du_nav_base_dt: NAV기준일            # 해외전용
+  du_base_dt_match_yn: 기준일일치여부  # 해외전용
+  ru_mkt_price: 현재가
+  pd_lst_price: 상품액면가                # ⚠️ 전부 0 — constant_columns 참조
+  # 규모·거래
+  du_last_aum: 최종AUM(순자산총액)
+  du_val_1d: 일거래대금
+  du_vol_1d: 일거래량
+  ru_mkt_volume: 거래량
+  pd_lst_stk_cnt: 상품상장주식수
+  # 수익률·기타
+  du_er_1d: 수익률_1D
+  du_diff_rt: 괴리율
+  # 상태·일자
+  pd_sale_yn: 상품판매여부
+  pd_tr_yn: 상품거래정지여부
+  pd_lstg_dt: 상품거래가능일자(상장일)
+  cu_upt_dt: 변동갱신일자
+  du_upt_dt: 일간갱신일자
+  wu_upt_dt: 주간갱신일자
+
+columns:
+  # ── 없는 컬럼 = 대량 "데이터 미제공" (국내ETF엔 있으나 해외엔 부재) ──
+  _absent_columns:
+    korean_name: 국내ETF엔 있으나 해외ETF엔 없는 컬럼
+    answer_policy: "위험등급·1년/YTD/기간수익률 질의는 해외ETF 대상 시 '데이터 미제공' 명시. 국내ETF로 유도하거나 확인 불가 안내."
+    note: "pd_risk_nm·pd_risk_cd(위험등급), du_er_1y·du_er_ytd·du_er_1m/3m/6m(기간수익률) 컬럼 자체가 스키마에 없음. du_er_1d 는 2차부터 유효(97.7%)하나 1일치뿐 — 연/기간 수익률 대용 불가."
+
+  # ── 상장시장 (101·102 세부코드) ──
+  pd_exg_mkt_cd:
+    korean_name: 거래소코드
+    missing_reason: present
+    answer_policy: "AMX/NAS/NYS는 미국 주요 3시장. 101·102는 미국 소형/신규 상장 세부코드로 취급(전부 pd_mkt_id='US')."
+    note: "AMX 4,569 / NAS 1,359 / NYS 78 / 102 22 / 101 9 (2차). 101·102(31건)는 교차대조상 미국 소형·신규 상장 ETF(티커 접미어 .K 20·.O 9·무접미 2=LUX·IEQ). 정확한 시장명은 코드북 market.csv 보강 대상('101'·'102' 행 추가 필요)이나 영향 작음."
+    value_semantics:
+      AMX: NYSE Arca (미국)                # 🔴 2026-08-20 정정 — 코드북 market.csv 검증(VOO·SPY·IVV 전부 NYSE Arca 상장, 커밋 e7c609b)이 yaml 에 미전파돼 있었음. 'NYSE American' 은 AMEX 오독의 잔재
+      NAS: NASDAQ (미국)
+      NYS: NYSE (미국)
+      "101": 미국 소형/신규 상장(세부, 9건)
+      "102": 미국 소형/신규 상장(세부, 22건)
+    # ✅ 검토(etf-dev/08-21): AMX=NYSE Arca 정정 재확인 — VOO·SPY·IVV(전부 실세계 NYSE Arca 상장) 3건 모두 DB에서 AMX. 정정 타당, yaml 전파 확인.
+
+  # ── 기초지수 (센티넬) ──
+  cu_base_index:
+    korean_name: 기초지수
+    kg_entity: Index                # 2026-08-25 포인터 기입 — coverage report 추적용 (shared/index.yaml)
+    missing_reason: missing
+    answer_policy: "기초지수 질의는 센티넬 제외 후 유효 3,106건(51.4%) 한정 + 모수 명시."
+    trap: "센티넬 문자열 — 'Index is not provided by Management Company' 2,285건 + 'Index is not available on Lipper Database' 635건 = 2,920건 (1차 2,705 → 약간 악화). IS NULL 로는 안 잡힘 (NULL 은 11건뿐)."
+    note: distinct 1,850종으로 보이나 절반이 센티넬. 실질 수록 3,106건(51.4%) · 유효 distinct 1,848종. 국내ETF 와 달리 2차에서도 개선 없음.
+
+  # ── 수익률 (1일만 — 2차부터 유효, 판정 뒤집힘 2026-08-25) ──
+  du_er_1d:
+    korean_name: 1일수익률
+    missing_reason: mixed   # 🔧 정정(etf-dev/08-27) [A절]: present → mixed
+    answer_policy: >-
+      1일수익률 질의는 답변 가능(유효 5,898건 = 97.7%, 기준일 du_clpr_base_dt 병기).
+      🔴 연/YTD/기간 수익률은 컬럼 자체가 없어 **미수록**.
+      ✅ OQ-2 답변 확정(2026-08-26): 주최는 "해외 ETF 1년 수익률을 묻는 질의는 없을 예정이며,
+      '~~ 종목 포함된 ETF의 1년 수익률' 질의 시 해외 ETF 는 **제외해도 무방**" 이라고 답변.
+      → 교차 TOP-N 에서 해외ETF 는 **순위에서 제외**한다. 1일수익률 병기는 하지 않는다(옛 fallback 폐기).
+      1일치를 연수익률로 환산·대용하지 말 것.
+    trap: "1차(7/11)에선 유효분 전부 0 이라 '수익률 질의 불가' 로 판정했었다 — 2차에서 값이 채워졌으므로 옛 판정을 인용하지 말 것."
+    note: >-
+      2차 유효 5,898(97.7%) · NULL 14 · 0값 125. 기간수익률 컬럼은 여전히 없음 (_absent_columns).
+      🔴 2026-08-26 zero_is_value 해제 — 주최 답변("수익률·총보수 컬럼 질의 시 값이 0 인 행은 아예 포함하지 않는다.
+      값이 0 이니 당연히 기준이 없음")에 따라 0값 125건을 정렬·필터에서 제외한다.
+      0 이 '당일 등락 없음(보합)' 이라는 관측 사실은 유지하되, 랭킹 축으로는 쓰지 않는다.
+    unit: percent
+
+    # ✅ 검토(etf-dev/08-27) [A절]: 🔴 결측 14건은 du_val_1d·ru_mkt_price 와 완전 동일 집합이며 14건 전부 du_clpr 도 NULL = 시세가 통째로 없음. pd_sale_yn=0 은 0건(판매중 표시)이나 실제로는 데이터 껍데기 → 어떤 질의에서도 제외.
+  # ── 총보수 (국내와 대조 — 깨끗) ──
+  cu_charge_rt:
+    korean_name: 총보수요율
+    missing_reason: present
+    answer_policy: "결측 0% — 보수 질의에 신뢰도 높게 답변 가능. 0값 419건(레버리지/인버스/ETN 위주)은 '보수 0'이 아니라 미수록으로 취급해 보수 정렬·필터에서 제외하고 모수 명시."
+    note: "국내ETF와 정반대. 2차: 결측 0 · 0값 419건(ETN 51건 포함) · 양수 중앙값 0.50%, max 2.50%. 단위 USD 기준 아님(요율 %)."
+    unit: percent
+
+  du_last_aum:
+    korean_name: 최종AUM
+    missing_reason: mixed   # 🔧 정정(etf-dev/08-27) [A절]: present → mixed
+    answer_policy: "AUM 질의 답변 가능(결측 3.4% · 0값 11건 제외). 단위 USD. 국내ETF(KRW)와 통합 정렬 시 ontology/codebooks/fx_rate.csv(8/21 기준 1,384.23 으로 2026-08-25 교체 완료) 적용 — 미적용 상태면 상품군별로 분리 제시."
+    note: "단위 USD 확정 (VOO $997.35B·SPY $820.11B 2차 실제값 대조(1차 $995B·$783B) + pd_trd_ccy 전부 USD). 국내ETF는 KRW라 숫자 직접 비교 시 순위 역전(함정②)."
+    # ✅ 검토(etf-dev/08-21): 환율 확정(1차 1,504.92 → 2차 1,384.23 ECB 8/21)으로 통합 정렬 조건부 허용. 근거 — VOO는 두 환율(1,485↔1,505) 모두 KODEX200의 약 53배(2차 ≈1,380조 vs 25.8조; 1차 1,498조 vs 28조)라 큰 격차엔 ±1.3% 무영향. 뒤집힘은 규모 유사($19~20B ↔ 28조원 부근) 종목만이라 5% 경계 단서로 방어. 🔧 정정: 통합 정렬 금지 → 조건부 허용(환율 병기). 최종 go 는 워크샵/리드 확인 권장(답변 행동 변경).
+    unit: usd
+    layer:
+      scale: USD (달러)
+      cross_sort: "국내ETF du_last_aum(KRW)와 나란히 정렬 불가. VOO $997B > KODEX200 25.8조원(≈$187억)인데 숫자만 보면 KODEX가 26배 커 보임(2차; 1차 $995B·28.4조·28배)."
+
+    # ✅ 검토(etf-dev/08-27) [A절]: 결측 205건 — '시세 전무 14건'과 다른 집단. 205건 전부 du_clpr 유효(정상 거래중)이고 판매종료 0건 = 거래는 되나 순자산만 미수록(소형 ETF 집계 누락 추정). Top-N 에서 제외하고 모수 명시.
+  # ── 실시간 (국내와 달리 채워짐) ──
+  ru_mkt_price:
+    korean_name: 현재가
+    missing_reason: mixed   # 🔧 정정(etf-dev/08-27) [A절]: present → mixed
+    answer_policy: "결측 0.2% — 종가로 백필된 값. '실시간'이 아니라 기준일(8/21) 종가임을 명시."
+    note: 종가(du_clpr)로 채워짐. 2차부터는 국내ETF도 같은 방식으로 채워져 대칭.
+
+    # ✅ 검토(etf-dev/08-27) [A절]: 결측 14건 — du_er_1d 와 동일 집합·동일 원인(시세 전무).
+  # ── 레버리지 (2차부터 부분 유효 — 판정 뒤집힘 2026-08-25) ──
+  cu_lev_fector:
+    korean_name: 레버리지배수
+    missing_reason: mixed
+    answer_policy: >-
+      레버리지/인버스 판별은 cu_lev_fector(유효 901건 = 14.9%, **부호 정상** — 음수 = 인버스) 와
+      cu_inverse_short_yn='Y'(183건) 를 병행. 둘 다 없으면 상품명(Ultra/2X/Bull/Bear)으로 보조.
+      결측 5,136건은 "배수 미수록"이지 1배(비레버리지) 확정이 아님 — 레버리지 아님 을 단정하지 말 것.
+    trap: "1차(7/11)는 100% 결측이라 '못 씀' 판정이었다 — 옛 판정 인용 금지. 국내ETF 는 반대로 2차에서 부호가 소실됐으므로(domestic_etfs.yaml) 교차질의 시 도메인별 판정 규칙이 다름."
+    note: "2차 분포: 2.0 677 · -2.0 92 · 3.0 60 · -3.0 34 · 1.2 25 · 1.5 6 · 기타 7 / NULL 5,136."
+  du_diff_rt:
+    korean_name: 괴리율
+    missing_reason: missing
+    answer_policy: "'데이터 미제공'."
+    note: 2차에도 99.95% 결측 (유효 3건).
+  du_last_nav:
+    korean_name: 최종NAV
+    missing_reason: missing
+    answer_policy: "NAV 질의는 유효 12.6%(758건)만. 모수 명시."
+    note: 87.4% 결측 (1차 87.9%).
+
+  # ── 식별자 중복 (2026-08-18 감사 신설) ──
+  _identifier_dup:
+    korean_name: ISIN·Lipper 중복 주의
+    evidence_grade: A
+    trap: >-
+      🔴 pd_isin_cd 중복 63종 · pd_lipper_id 중복 63종 (각각 한 값이 2개 상품 · 2차).
+      "해외가 식별자가 낫다(ISIN/Lipper/CIK)" 는 결측률 이야기이지 유일성 이야기가 아니다.
+    answer_policy: >-
+      ISIN·Lipper 로 조인·단건 조회 시 2건이 나올 수 있다 — pd_itm_no 를 기본 키로 쓰고,
+      ISIN 검색 결과가 복수면 티커를 병기해 모두 제시할 것.
+    applies_to:
+    - pd_isin_cd
+    - pd_lipper_id
+
+  # ── 핵심ETF여부 (2026-08-18 감사 신설 — 사용 불가) ──
+  wu_core_yn:
+    korean_name: 핵심ETF여부
+    missing_reason: missing
+    answer_policy: "🔴 '핵심 ETF' 질의에 이 컬럼 사용 금지 — 98.2% 결측에 유효값이 전부 'N'(Y 는 0건)이라 판별 정보가 없다. '데이터 미제공'."
+    note: 2차에도 유효 106건 전부 'N'. 컬럼명과 달리 핵심 여부를 담고 있지 않다.
+
+  # ── 상장일 위장결측 (2026-08-20 신설 — NEXT_STEPS §4.2 기록 지시 이행) ──
+  pd_lstg_dt:
+    korean_name: 상품거래가능일자(상장일)
+    missing_reason: mixed
+    trap: "0값 11건(1차 8건) — 원본 '00000000' 이 정수 0 으로 적재된 날짜 위장결측. IS NULL 로 안 잡히고 상장일 정렬 시 최솟값으로 밀려 올라옴. DB 에선 integer 라 조건은 pd_lstg_dt <> 0."
+    answer_policy: "상장일 필터·정렬 시 pd_lstg_dt <> 0 제외. 해당 11건은 '상장일이 수록되어 있지 않습니다'로 답변."
+
+  # ── 거래대금·거래량 0값 (2026-08-18 감사 신설) ──
+  du_val_1d:
+    korean_name: 일거래대금
+    missing_reason: mixed   # 🔧 정정(etf-dev/08-27) [A절]: present → mixed
+    answer_policy: "거래대금·거래량 Top-N 은 0값 91건(미거래 상품, du_val=du_vol 동시 0)을 **제외**하고 모수를 밝힐 것 — 주최 답변(0값 행 제외) 확정."
+    note: >-
+      2차 0값 91건(1차 187)은 du_vol_1d 와 정확히 동일 상품 — 당일 미거래(관측 사실).
+      🔴 2026-08-26 zero_is_value 해제 — 주최 답변에 따라 랭킹·필터에서 0 을 제외한다. 결측 0.2%(14건).
+    applies_to:
+    - du_val_1d
+    - du_vol_1d
+
+    # ✅ 검토(etf-dev/08-27) [A절]: 결측 14건 — du_er_1d 와 동일 집합·동일 원인(시세 전무).
+  # ── 운용사 (영문) ──
+  cu_fund_mgmt_co:
+    korean_name: 운용사
+    kg_entity: Organization                # 2026-08-25 포인터 기입 — coverage report 추적용 (shared/organization.yaml)
+    missing_reason: mixed   # 🔧 정정(etf-dev/08-27) [A절]: present → mixed
+    trap: "영문 382종(BlackRock Fund Advisors 등). 국내ETF(한글 약칭)와 표기 체계 완전히 다름 → 교차질의 매핑 필요. 2차에서 국내ETF 에 ref_fund_mgmt_co(영문 정규 법인명) 가 생겨 영문↔영문 매핑 경로 가능."
+    answer_policy: 운용사 질의는 영문 기준. 국내 운용사명과 매핑은 워크샵 결정(§F-2).
+    note: 2차 BlackRock 498·First Trust 327·Tidal 319. 결측 0.2%(12건).
+
+
+    # ✅ 검토(etf-dev/08-27) [A절]: 결측 12건 중 11건은 '시세 전무 14건'(du_er_1d 참조)에 포함되고 상품명이 티커와 동일(TAWN·BBLS 등)해 정식 명칭조차 없음. MPIA 1건은 시세·정식명 있음(2026-09-02 재확인).
+  # ── 2026-08-26 도메인 감사(리드 지시) — 한글명만 있고 결측판정 없던 컬럼 보강 ──
+  # 대상 선정: 33종(column_korean_names 는 있으나 columns 판정 없음) 중 분석상 의미있는 17종만 우선.
+  # 나머지(pd_itm_no·pd_nm 등 순수식별자, pd_grp_no·pd_sale_yn·pd_tr_yn 등 기제출 no-op 상수)는 제외.
+  cu_strtegy:
+    korean_name: 운용전략
+    missing_reason: mixed
+    trap: >-
+      🔴 국내ETF와 완전히 다른 자료형 — 같은 컬럼명이지만 국내는 짧은 코드값('실물복제'·'액티브'·'합성복제'·'C'=ETN),
+      해외는 영문 자유서술 문단(전략 설명 풀텍스트, distinct 5,943/6,026 사실상 전건 고유).
+      국내의 axis_derivation 규칙(cu_strtegy='액티브' → Active 등)을 해외에 그대로 적용하면 매칭 0건으로 조용히 실패한다.
+    answer_policy: "해외ETF 운용전략은 영문 문단 원문 그대로 인용/요약만 가능. 국내처럼 Active/Passive 값매핑 아직 없음(축 미구축) — 필요시 문단 키워드('actively managed' 등) 별도 유도 필요."
+    note: 결측 11건(0.2%). RAG/벡터검색 소스로 적합(자유서술).
+  cu_index_repl_mthd:
+    korean_name: 지수복제방법
+    missing_reason: not_applicable   # 🔧 정정(etf-dev/08-27) [C-1-37]: mixed → not_applicable
+    answer_policy: >-
+      '복제방법' 질의는 Optimized/Swap/Full/Other 값 직답 가능(2026-08-21 E5 검토로 값 부합 확인).
+      🔴 NULL 3,630건은 '데이터 미제공'이 아니라 **해당 없음** — 지수를 추종하지 않는 액티브 상품이라
+      복제할 지수가 애초에 없다. "복제방법을 알 수 없다"가 아니라 "지수를 추종하지 않는 상품"이라고 답할 것.
+    note: >-
+      값 4종 Optimized 1,826 · Swap 297 · Full 278 · Other 6 (2차).
+      cu_index_tracking_yn 과 결측 집합 **완전 동일**(0건 불일치) — 같은 원천 메타데이터 쌍.
+      NULL 3,630 중 2,440건은 cu_base_index 도 센티넬이라 '지수 미추종' 해석과 일관.
+  cu_index_tracking_yn:
+    korean_name: 지수추종여부
+    missing_reason: not_applicable   # 🔧 정정(etf-dev/08-27) [C-1-38]: mixed → not_applicable
+    answer_policy: >-
+      'Y'(2,407건)만 저장하는 희소인코딩. 🔴 NULL 3,630 은 '모름'이 아니라 **'지수를 추종하지 않음'(액티브)** 으로 읽는다.
+      "추종 여부를 확인할 수 없다"고 답하지 말 것.
+    note: >-
+      Y 2,407건은 전건 cu_index_repl_mthd 보유(2,407/2,407) · NULL 3,630 은 cu_index_repl_mthd NULL 과 완전 동일 집합.
+      두 컬럼이 한 쌍으로 채워지는 구조가 '액티브라 해당 없음' 해석의 근거.
+  cu_inverse_short_yn:
+    korean_name: 인버스숏여부
+    missing_reason: mixed
+    answer_policy: >-
+      희소인코딩 — 'Y' 183건만 저장. 🔴 NULL 을 '인버스 아님'으로 단정하면 **오답이 난다**.
+      인버스/숏 질의는 반드시 `query_rules.인버스숏`(플래그 OR 음수배수 OR 상품명)을 쓸 것.
+    trap: >-
+      실측 누락 8건 — ① 플래그 NULL 인데 cu_lev_fector = -2.0 인 확정 인버스 3건(SSPC·SKDD·SPCQ)
+      ② 플래그가 빈 5건 — QBER·YQQQ·VYLD 는 배수도 NULL(이름 Bear/Short/Inverse), SNK·METQ 는 이름이 '2x Short' 인데 배수가 +2.0(부호 오류, 2026-09-02 재확인).
+      플래그만 쓰면 183건, 규칙을 쓰면 191건.
+    note: >-
+      🔧 2026-08-27 [C-1-39] 정정. 옛 note 의 "cu_lev_fector 100% 결측" 은 1차(7/11) 관측이며
+      2차에서는 유효 901건(14.9%) · 부호 정상이므로 인용하지 말 것.
+  cu_etn_yn:
+    korean_name: ETN여부
+    missing_reason: not_applicable   # 🔧 정정(etf-dev/08-27) [C-1-36]: mixed → not_applicable
+    answer_policy: >-
+      희소인코딩 — 'Y'(65건 = 해외ETN 전량)만 저장. 🔴 NULL 5,972 는 결측이 아니라 **'ETN 아님'** 이다.
+      집계·통계에서 NULL 을 '모름'으로 세지 말 것. 상품군 판별의 정본은 pd_grp_no, 이 컬럼은 보조신호.
+  du_opr:
+    korean_name: 시가
+    missing_reason: mixed
+    answer_policy: "가격 질의 가능. 결측 0.2%(14건 — 전부 ETF, ETN 0. 2026-09-02 재확인)는 '가격 미제공'."
+    note: "✅ 검수(08-21): [저가,고가] 구간 정합 99.77% — 명명 타당성 확인됨."
+  du_hpr:
+    korean_name: 고가
+    missing_reason: mixed
+    answer_policy: "가격 질의 가능. 결측 0.2%."
+  du_lpr:
+    korean_name: 저가
+    missing_reason: mixed
+    answer_policy: "가격 질의 가능. 결측 0.2%."
+  du_bpr:
+    korean_name: 기준가
+    missing_reason: mixed
+    answer_policy: "가격 질의 가능. 결측 0.2%."
+  du_clpr:
+    korean_name: 종가
+    missing_reason: mixed
+    answer_policy: "가격 질의 가능(du_clpr_base_dt 기준일 병기 권장). 결측 0.2%."
+  du_vol_1d:
+    korean_name: 거래량(1일)
+    missing_reason: mixed
+    trap: "🔴 ru_mkt_volume 과 100% 동일값(0/6,023 불일치) — 사실상 같은 값의 중복 컬럼. 둘 다 쓰면 이중집계 위험 없음(같은 값이라)이나, 어느 쪽이 정본인지 불명 — du_vol_1d 를 정본으로 채택 권장(명명이 스키마 설명과 일치)."
+    answer_policy: "거래량 질의 가능. 결측 0.2%."
+  pd_lst_price:
+    korean_name: 상장가격
+    missing_reason: missing
+    trap: "🔴 99.75%(6,022/6,037)가 0.0 — 사실상 전량 미입력 센티넬. 0 아닌 값은 단 1건(0.01)뿐."
+    answer_policy: "'상장가격' 질의는 데이터 미제공으로 응답. 0값을 실제 가격으로 서술 금지."
+  pd_isin_cd:
+    korean_name: ISIN코드
+    missing_reason: mixed
+    answer_policy: "식별 조회 가능. 결측 0.2%(12건 — 전부 ETF, ETN 0)."
+  pd_us_cik:
+    korean_name: 미국SEC등록번호(CIK)
+    missing_reason: mixed
+    answer_policy: "구성종목 외부조회(SEC EDGAR) 키. 결측 0.3%."
+  pd_lipper_id:
+    korean_name: Lipper식별자
+    missing_reason: mixed
+    answer_policy: "글로벌 펀드평가사 식별자. 결측 0.2%. 질의 답변 용도보다 조인 키 성격."
+  pd_curr_cd:
+    korean_name: 상품통화코드
+    missing_reason: mixed
+    answer_policy: "USD 전량('INR' 등 극소수 예외 존재 — 재확인 필요). 결측 0.2%."
+  cu_upt_dt:
+    korean_name: 상품정보갱신일
+    missing_reason: present
+    note: 전건 20260822 상수 — 마스터 갱신 기준일. 신선도 지표.
+  du_upt_dt:
+    korean_name: 시세정보갱신일
+    missing_reason: present
+    note: distinct 108종 — 종목별 갱신일 이질. '최신 데이터인가' 질의 시 병기 권장(채권 도메인의 유사 신선도 함정과 동일 패턴).
+  du_clpr_base_dt:
+    korean_name: 종가기준일
+    missing_reason: mixed
+    answer_policy: "가격 답변 시 기준일 병기 필수. 결측 0.2%."
+
+# ── ETF/ETN 구분 ──
+  # ── 2026-08-25 kg_entity 포인터용 stub ──
+  wu_inv_rgn:
+    korean_name: 투자지역
+    kg_entity: Region                # 2026-08-25 포인터 기입 (stub)
+    missing_reason: mixed   # 🔧 정정(etf-dev/08-27) [A절]: none → mixed
+    note: "59종 영문 — 14/59 매핑, 45종 계층 매핑 대기 (graph_sources_review §3)"
+    # ✅ 검토(etf-dev/08-27) [A절]: 결측 11건 — wu_inv_ast_type 과 동일 집합·동일 원인.
+  wu_inv_ast_type:
+    korean_name: 투자자산유형
+    kg_entity: AssetClass                # 2026-08-25 포인터 기입 (stub)
+    missing_reason: mixed   # 🔧 정정(etf-dev/08-27) [A절]: none → mixed
+    note: "6종 영문 (Equity/Bond/…) — 6/6 매핑"
+    # ✅ 검토(etf-dev/08-27) [A절]: 결측 11건 — wu_inv_rgn 과 동일 집합이며 '시세 전무 14건'에 포함(11/11). 시세뿐 아니라 분류까지 없는 상품 = 마스터 수록 자체가 불완전.
+  pd_trd_ccy:
+    korean_name: 거래통화
+    kg_entity: Currency                # 2026-08-25 포인터 기입 (stub)
+    missing_reason: none
+    note: "전부 USD (constant_columns)"
+
+product_group:
+  column: pd_grp_no
+  values:
+    ETF: 5972
+    ETN: 65
+  secondary: cu_etn_yn='Y' (65건), cu_inverse_short_yn='Y' (183건, 인버스/숏)
+  note: "ETN 1.1%로 국내(30.6%)보다 경미. ETF 전용 질의는 pd_grp_no='ETF'. (2차 2026-08-22)"
+
+# ── 정규화 ──
+normalization:
+  trim_columns:
+  - pd_nm
+  - pd_abrv_nm
+  - cu_fund_mgmt_co
+  - cu_base_index
+  - wu_inv_ast_type
+  - wu_inv_rgn
+  language_note: "자산군·지역이 영문. 국내ETF(한글)와 교차 시 매핑 테이블 필요 (주식↔Equity, 미국↔United States of America). → 워크샵 §F-2."
+
+# ── 정보량 0 컬럼 (2026-08-18 감사 신설 — 필터·답변 축으로 쓰지 말 것) ──
+constant_columns:
+  _note: distinct 1 (유효분 기준). 필터로 쓰면 항상 전량 또는 0건.
+  pd_sale_yn: "유효 6,023건 전부 1(판매중) — 국내ETF 와 달리 판매완료 0건. '판매중만' 규칙이 해외에선 no-op"
+  pd_tr_yn: "유효 6,023건 전부 0(거래정상) — '거래정상' 규칙도 no-op"
+  pd_trd_ccy: "전부 USD"
+  pd_mkt_id: "전부 US"
+  du_base_dt_match_yn: "유효분 전부 N — 기준일 일치 정보 없음. 답변에 '기준일 일치 여부' 서술 금지 (✅ 재검증 2026-08-25)"
+  pd_lst_price: "6,022/6,037 이 0 — 액면가 정보 없음. '액면가' 질의는 '수록 없음' (✅ 재검증 2026-08-25)"
+  du_clpr_src: "유효분 전부 pd65n101.tday_clpr (출처 상수)"
+  cu_index_tracking_yn: "유효 2,407건 전부 Y — 추종/비추종 판별 정보 없음 (결측 60.1%)"
+  cu_index_repl_mthd: "⚠️ 상수 아님(Optimized 1,826 · Swap 297 · Full 278 · Other 6) 이나 결측 60.1% — 복제방식 질의는 유효 2,407건 한정 + 모수 명시"
+  _removed_2026-08-25: "du_er_1d — 1차엔 전부 0 이었으나 2차에서 유효(columns.du_er_1d). 상수 목록에서 제거."
+
+# ── 상수 컬럼 위반 게이트 (2026-08-30 R-5 ① 층 · src/runtime/gate.py ④) ──
+# 이 테이블 하나로 라우팅됐을 때, triggers(정규식) 가 질문에 있으면 HCX 호출 0회로 기각한다.
+# 🔴 경계식 필수 — '유로스탁스50' 은 지수명이지 통화가 아니다. gold ETF-O-015·016 이 이 게이트의 회귀다.
+gate_constants:
+- column: pd_trd_ccy
+  value: USD
+  triggers:
+  - '\bEUR\b'
+  - '유로(?!스탁|존|피안)\s*(?:\(EUR\))?\s*(?:로|화로|표시로)?\s*(?:거래|결제|표시|매매)'
+  - '\bJPY\b'
+  - '엔화?\s*(?:로|표시)?\s*(?:거래|결제)'
+  - '원화\s*(?:로|표시)?\s*(?:거래|결제)'
+  - '\bKRW\b'
+  - '위안\s*(?:로|화로)?\s*(?:거래|결제)'
+  answer: "해외 ETF 마스터의 거래통화(pd_trd_ccy)는 전부 USD 입니다. USD 이외 통화로 거래되는 해외 ETF 는 수록되어 있지 않습니다."
+- column: pd_mkt_id
+  value: US
+  triggers:
+  - '한국\s*거래소'
+  - '\bKRX\b'
+  - '(?:코스피|코스닥|국내)\s*(?:시장\s*)?(?:에\s*)?상장'
+  - '(?:런던|도쿄|홍콩|프랑크푸르트|파리|상하이|유럽)\s*(?:증권)?\s*거래소'
+  answer: "해외 ETF 마스터는 전부 미국 시장(AMX·NAS·NYS) 상장 상품입니다. 다른 거래소에 상장된 해외 ETF 는 수록되어 있지 않습니다."
+
+# ── 쿼리 가드레일 ──
+query_rules:
+
+  부정조건:
+    triggers: [제외, 빼고, 말고, 아닌, 없는, 뺀, 제하고]
+    text: >-
+      🔴 질문의 배제 낱말은 **부정 조건**이다 — NOT · <> · NOT LIKE 로 푼다(국내와 같은 방침).
+      🔴 NULL 주의 — cu_inverse_short_yn <> 'Y' 는 NULL 5,854행을 떨어뜨린다.
+      인버스가 **아님** 을 표현하려면 COALESCE(cu_inverse_short_yn,'') <> 'Y' 를 쓴다.
+      답변에는 무엇을 제외했는지 밝힌다.
+  ETF만: pd_grp_no = 'ETF'
+  ETN만: pd_grp_no = 'ETN'
+  기초지수유효: "cu_base_index NOT LIKE '%not provided%' AND cu_base_index NOT LIKE '%not available%'"
+  보수유효: >-
+    cu_charge_rt > 0
+    총보수 **정렬·필터·Top-N**('수수료 저렴한 해외 ETF' 등)에만 반드시 넣는다.
+    0값 419건(레버리지/인버스/ETN 위주)은 '보수 0' 이 아니라 미수록 — 없으면 0값 행들이
+    '가장 저렴' 으로 도배된다(2026-08-31 paired 실측 ETF-O-020). 모수 명시.
+    🔴 **보수를 묻지 않은 질의에는 걸지 않는다.** 서버 실측 2026-09-01 —
+    "미국 반도체 ETF 알려줘" 에 이 조건이 붙어 SSG(ProShares UltraShort Semiconductors,
+    보수 미수록)가 목록에서 **말없이 빠졌다**(18→17건). 미수록은 제외 사유가 아니라
+    "보수 미수록" 으로 표기할 사유다. cu_fund_mgmt_co 존재 조건도 같다 — 묻지 않았으면 걸지 않는다.
+    형식(보수 Top-N): `SELECT TRIM(pd_abrv_nm) AS 티커, pd_nm AS 상품명, cu_charge_rt AS 연간보수율pct
+    FROM overseas_etfs WHERE pd_grp_no='ETF' AND cu_charge_rt > 0 ORDER BY cu_charge_rt ASC, du_last_aum DESC LIMIT <N+여유>`
+    🔴 **동률을 자르지 않는다** — 최저 0.01% 가 **6개 동률**인데 LIMIT 5 로 자르면 1개(VEXC,
+    Vanguard EM Ex-China)가 말없이 빠진다(서버 실측 2026-09-01). N개를 물어도 N위와 동률인 행은
+    모두 싣고 동률임을 밝히거나, 최소한 "0.01% 동률이 6개" 라고 말한다. 2차 정렬(du_last_aum DESC)로
+    동률 내 순서를 고정해 재현 가능하게 한다.
+    답변에 **모수를 밝힌다** — "연간보수율이 수록된 ETF 5,604개 중"(실측 2026-09-01).
+  ISIN조인금지:
+    triggers: [ISIN, 편입, 보유, 담은, 담고, 구성, 포함, 들어]
+    text: >-
+      🔴 pd_isin_cd·pd_lipper_id 는 단독 조인·단건 조회 키로 쓰지 않는다 — 각각 63종이 2개 상품에 걸린다(같은 ISIN 이 OEUR.K/OEFA.K 둘 다).
+      조인·단건 조회 키는 pd_itm_no. ISIN 검색 결과가 복수면 티커를 병기해 모두 제시한다. (리드 확답 2026-08-31, B-3)
+  # 🆕 2026-08-31 리드 확답(ask_lead §3) — "○○ 담은 상품" 질의에 같은 발행사의 **회사채**가 섞여 나올 수 있다.
+  #    ㉡ closure 확장으로 Sec_lei_* 법인 노드 아래 주식·채권이 함께 매달린다
+  #    (예: NVIDIA — 주식 Sec_o_67066G104 · 회사채 Sec_o_67066GAF1, CUSIP 발행사부(6자리)가 같다).
+  #    회의 공통 패턴("빼지 않고 알린다")대로 **제외하지 않는다** — 발행사 기준으로는 맞는 답이다.
+  #    대신 결과에 채권이 섞이면 답변에 밝힌다: "이 중 N건은 ○○ 주식이 아니라 ○○가 발행한 채권을 담은 상품입니다."
+  #    판별: ext_ovs_etf_holdings 에서 CUSIP 9자리 중 발행사부(앞 6자)가 같고 발행물부(7~8자)가 다르면 별개 증권이며,
+  #          holding_name 에 만기·이율 표기(예: 'NVIDIA Corp 3.5% 2040')가 있으면 채권이다.
+  종목질의_회사채포함:
+    triggers: [편입, 보유, 담은, 담고, 구성, 포함, 들어, 채권]
+    text: "발행사(Sec_lei_*·Sec_m_*) 후손 확장 결과에 채권이 섞이면 제외하지 말고 답변에 밝힌다"
+  # 🔴 2026-08-27 C절 검토 — 플래그만 믿으면 인버스를 놓친다.
+  #    실측: cu_inverse_short_yn 이 NULL 인데 cu_lev_fector < 0 (인버스 확정) 3건
+  #          — SSPC·SKDD·SPCQ (전부 배수 -2.0, 이름도 '2X Short').
+  #          이름이 Bear/Short/Inverse 인데 플래그 없는 5건(QBER·YQQQ·VYLD·SNK·METQ) 추가.
+  #    → 플래그 OR 음수배수 OR 상품명 병행. 183 → 191건 (기존 Y 183 누락 0 · 오탐 0 검증).
+  #    ⚠️ 오탐 제외 필수 — 이름에 Short/Bear 가 들어가도 인버스가 아닌 것들이다.
+  #       · 'Short Duration/Term/Trm' · 'UltraShort + Income/Bond/Treasury/Municipal/Fixed'
+  #         → 여기서 Short 는 방향이 아니라 **만기가 짧다**(초단기 채권)는 뜻.
+  #       · 'BullBear' (WBI BullBear 3종 — WBIF·WBIG·WBIL)
+  #         → 양방향이 아니라 **하락장 방어 기능을 얹은 상승 추종 액티브 주식펀드**.
+  #           근거: 셋 다 wu_inv_ast_type='Equity' · cu_strtegy 원문 "invests at least 80% of its
+  #           net assets in the equity securities ... while also seeking to protect principal
+  #           during unfavorable market conditions" · cu_lev_fector 전부 NULL.
+  인버스숏: >-
+    cu_inverse_short_yn = 'Y' OR cu_lev_fector < 0
+    OR pd_nm LIKE '%Inverse%' OR pd_nm LIKE '%X Short %' OR pd_nm LIKE '%Daily Short%'
+    OR (pd_nm LIKE '%Bear%' AND pd_nm NOT LIKE '%BullBear%')
+    OR (pd_nm LIKE '%UltraShort%' AND pd_nm NOT LIKE '%Income%' AND pd_nm NOT LIKE '%Bond%'
+        AND pd_nm NOT LIKE '%Treasury%' AND pd_nm NOT LIKE '%Municipal%' AND pd_nm NOT LIKE '%Fixed%')
+    🔴 `cu_inverse_short_yn` 의 값은 **'Y'(183건)와 NULL(5,854건) 뿐 — 'N' 은 0건**이다. '아니다' 를 `= 'N'` 으로 쓰면 무조건 0행이 된다(실측 오답 2026-09-04). 🔴 이 조건을 **통째로** 쓴다 — `cu_inverse_short_yn='Y'` 하나로 줄이면 **8건을 놓친다**
+    (실측 183 vs 191 · 2026-09-01): QBER·SNK·METQ·VYLD·YQQQ·SSPC·SKDD·SPCQ —
+    플래그가 비었는데 배수가 음수이거나 이름이 '2X Short'·'Inverse' 인 진짜 인버스들이다.
+    서버 실측 2026-09-01 — "해외 인버스 ETF 3개" 가 플래그만 걸었다.
+    (이 경고는 원래 yaml 주석에 있었다 — 주석은 프롬프트에 실리지 않아 플래너가 못 봤다. 본문으로 승격.)
+    🔴 질문이 "인버스 **ETF**" 면 `AND pd_grp_no = 'ETF'` 를 함께 건다 —
+    플래그 'Y' 인 183건 중 **ETN 이 17건** 섞여 있다(국내 인버스와 같은 함정).
+    ⚠️ UltraShort·BullBear 예외를 빼면 오탐 +10건(201), '%Short%' 단순 부분일치면 +140건(2026-09-02 재계수 — 옛 103 은 재현 불가) — 'UltraShort Bond/Treasury' 는 방향이 아니라 만기가 짧다는 뜻이고,
+    BullBear(WBI 3종)는 하락장 방어형 롱 펀드다.
+  레버리지:
+    triggers: [레버리지, 2X, 3X, 2배, 3배, Ultra, 배수, 따블, 더블]
+    text: >-
+      cu_lev_fector IS NOT NULL AND ABS(cu_lev_fector) <> 1
+      🔴 NULL 5,136건(85%)은 '미수록' 이지 **1배 확정이 아니다** — 결측 행을 '레버리지 아님' 으로
+      말하지 않는다(이름의 2X·3X·Ultra 를 함께 본다).
+      이 조건에 걸리는 상품은 **빼지 않는다** — 살 수 있는 정상 상품이고 배수는 사실이다.
+      결과에 인버스가 섞이면 레버리지_인버스혼입경고 대로 답변에 밝힌다.
+  # 🆕 2026-08-29 회의 결정 — 공통 패턴 "살 수 없는 건 제외, 살 수는 있는데 위험한 건 알린다".
+  #    `레버리지` 901건 중 **131건(14%)이 인버스**다(EDZ -3.0 · SRTY.K -3.0 등).
+  #    "레버리지 ETF 알려줘" 에 하락 베팅 상품이 섞여 나간다.
+  #    🔴 빼지 않는다 — 인버스도 살 수 있는 정상 상품이고 배수는 사실이다.
+  #    대신 답변에 인버스가 포함되면 밝힌다 —
+  #    "이 중 N건은 지수가 **내릴 때** 수익이 나는 인버스 상품입니다. 방향이 반대이니 확인하세요."
+  #    국내(domestic_etfs.레버리지_인버스혼입경고)와 같은 방침. 부호 소실은 국내만의 문제다(해외는 부호 정상).
+  레버리지_인버스혼입경고: >-
+    cu_lev_fector IS NOT NULL AND ABS(cu_lev_fector) <> 1
+    AND (cu_inverse_short_yn = 'Y' OR cu_lev_fector < 0
+         OR pd_nm LIKE '%Inverse%' OR pd_nm LIKE '%X Short %' OR pd_nm LIKE '%Daily Short%'
+         OR (pd_nm LIKE '%Bear%' AND pd_nm NOT LIKE '%BullBear%'))
+  상장일유효: pd_lstg_dt <> 0
+  판매중만: pd_sale_yn = 1       # ⚠️ 해외는 유효분 전부 판매중이라 no-op (constant_columns) — 국내와의 대칭 유지용
+  거래정상: pd_tr_yn = 0         # ⚠️ 동일 — no-op
+  # (a) 구매가능 — 주최 공지(8/24): 상장폐지·리스팅종료 외 전 종목 "구매가능" 가정.
+  #     해외ETF 마스터엔 상폐 컬럼이 없고 수록 = 현재 리스팅 (1차 대비 소멸 0건 — ISIN 변경 20건은 상폐 아님, 2026-09-02 v1 대조) → 수록 전건 구매가능.
+  구매가능: >-
+    1 = 1
+    해외ETF 는 상장폐지 필터 컬럼이 없고 유효분 전부 판매중이라 조건이 없다(1=1).
+    구매 가능 여부를 물으면 "마스터에 수록된 종목 = 구매 가능(주최 기준)" 으로 답한다.
+  # (b) 0/결측 — 주최 공지: 0·결측은 의도된 값 → 조회 시 빼거나 "없다" 응답.
+  #     수치 정렬·필터 기본은 `col IS NOT NULL AND col <> 0`. 예외(0 이 실제값)는 아래 zero_is_value 컬럼만.
+  수치정렬기본: "{col} IS NOT NULL AND {col} <> 0"
+  # 🔴 2026-08-26 — zero_is_value 예외 전량 해제. 주최 답변: "수익률·총보수 같은 컬럼을 질의했을 때
+  #     그 컬럼의 값이 0 인 행들은 아예 포함하지 않는 게 맞다 (값이 0 이니 당연히 기준이 없음)".
+  #     du_er_1d(125) · du_vol_1d(91) · du_val_1d(91) 의 0 은 '보합·미거래' 라는 관측 사실이지만
+  #     랭킹·필터 축으로는 쓰지 않는다. 개별 조회 시에만 사실대로 서술 가능.
+  zero_is_value: {}             # 예외 없음
+  zero_is_missing:              # 0 = 미수록 → 정렬·필터 제외 + "수록 없음" 응답
+    cu_charge_rt: 419건 (레버리지/인버스/ETN 위주 — 보수 0 아님)
+    du_last_aum: 11건
+    pd_lstg_dt: 11건 (날짜 위장결측)
+  # (c) 환율 — du_last_aum 은 USD. 국내ETF(KRW)·펀드(KRW) 와 통합 정렬 시
+  #     ontology/codebooks/fx_rate.csv (8/21 기준 1,384.23 으로 2026-08-25 교체 완료) 로 환산해 단위·환율·기준일을 답변에 명시.
+  #     환산 미적용이면 통합 정렬 금지 — 상품군별 분리 제시.
+  통합정렬환율:
+    triggers: [원화, 환율, 통합, 함께, 국내, 비교, 합쳐]
+    text: >-
+      du_last_aum * fx_rate(USD→KRW, fx_rate.csv)
+      🔴 국내(원화)와 해외(달러)를 **한 표로 정렬하려면 환산이 선행**돼야 한다 —
+      환산을 안 했으면 통합 정렬 금지, 상품군별로 분리해 제시한다.
+  단어경계_필수: >-
+    🔴 영문 약어를 `LIKE '%AI%'` 로 걸면 안 된다. 실측 오탐이 압도적이다 —
+    `AI` 부분일치 840건 중 **786건(93.6%)이 오탐**이고(Ch**ai**nlink · D**ai**ly · C**a**l**i**fornia 등),
+    `US` 는 1,330건 중 **652건(49%)이 오탐**이다(Pl**us** · Tr**us**t · Foc**us** 등).
+    SQLite 에는 정규식 `\b` 가 없으므로 **구분자를 공백으로 바꾼 뒤 공백으로 감싸** 비교한다:
+    `' '||replace(replace(replace(replace(pd_nm,'-',' '),'&',' '),'(',' '),')',' ')||' ' LIKE '% AI %'`
+    이 형식은 정규식 단어경계와 **누락 0 · 오탐 0 으로 일치**한다(AI 54건 · US 678건, 2026-08-31 실측).
+    3글자 이상(Oil·Gold·Bond 등)은 부분일치로도 오탐이 거의 없어 그대로 써도 된다.
+  상품명조회: >-
+    🔴 해외는 국내와 정반대다. `pd_abrv_nm` 이 이름이 아니라 **티커**다 —
+    6,037건 전건이 `pd_itm_no` 에서 `.K`/`.O` 를 뗀 것과 일치한다(AAUA / AAUA.K).
+    약어명이 정식명 안에 든 것은 68/6,037(대소문자 구분)·197(무시) 뿐이라 국내처럼 약어명으로 이름 조회를 하면 안 된다.
+    형식 — 티커로 물으면 `TRIM(pd_abrv_nm) = 'VOO'` (pd_itm_no 는 접미어 없는 티커가 703건이라 LIKE 'VOO.%' 는 0행 — 쓰지 않는다)
+    · 이름으로 물으면 `pd_nm` 을 쓰되 **공백 제거 후 LIKE** 하고 query_rules.단어경계_필수 를 함께 본다.
+    ⚠️ 약어명도 키가 아니다 — 중복 6건.
+  질문에_없는_필터금지:
+    triggers: [ETF, 알려줘, 추천, 뭐가, 있어, 목록, 개수, 몇]
+    text: >-
+      🔴 질문이 요구하지 않은 제한 조건을 임의로 붙이지 않는다(국내와 같은 방침).
+      서버 실측 2026-09-04 — "환헤지된 미국 ETF 알려줘" 에 아무도 요구하지 않은
+      `cu_inverse_short_yn = 'N' AND cu_lev_fector > 0` 이 붙어 **0행**이 됐다.
+      🔴 그 조건은 **DB 에 존재하지 않는 값**이다 — `cu_inverse_short_yn` 의 실제 값은
+      **'Y'(183건)와 NULL(5,854건) 뿐이고 'N' 은 0건**이다. 인버스가 아님을 표현하려면
+      `'N'` 이 아니라 `IS NULL` 또는 `COALESCE(cu_inverse_short_yn,'') <> 'Y'` 를 쓴다.
+      `cu_lev_fector > 0` 도 NULL 이 5,136건이라 사실상 모수를 773건으로 학살한다.
+      ✅ 허용되는 기본값은 `pd_grp_no`(ETF/ETN 구분)뿐. 나머지는 질문에 그 축이 있을 때만.
+  목록조회_별칭:
+    triggers: [알려줘, 추천, 목록, 뭐가, 있어, 리스트]
+    text: >-
+      🔴 **목록 질의에 전 컬럼을 나열하지 않는다** — `SELECT DISTINCT pd_nm, 티커, cu_*, du_*, pd_* …` 처럼
+      45개 컬럼을 늘어놓는 것은 `SELECT *` 와 같다(서버 실측 2026-09-04 환헤지 질의).
+      답변기가 컬럼을 오독하고, 결과가 커져 답변이 잘린다. 목록은 **3~5개 컬럼 + 한글 별칭**으로 —
+      `SELECT pd_nm AS 상품명, TRIM(pd_abrv_nm) AS 티커, du_last_aum AS 순자산USD FROM …`
+      query_rules.개별조회_별칭 과 같은 이유다(그 규칙은 개별 조회, 이 규칙은 목록 조회).
+  환헤지질의:
+    triggers: [환헤지, 헤지, Hedged, 환노출, 환위험, 언헤지]
+    text: >-
+      🔴 해외 ETF 에 환헤지 **플래그 컬럼은 없다.** 상품명으로만 구분한다 — `pd_nm LIKE '%Hedged%'`
+      실측 2026-09-04: 69건(Currency Hedged 6 · 미국 투자 46). 대표: DBEF(Xtrackers MSCI EAFE Hedged Equity) ·
+      HEFA(iShares Currency Hedged MSCI EAFE) · DXJ(WisdomTree Japan Hedged Equity).
+      ⚠️ `%Hedge%` 로 넓히면 86건인데 'Hedged Equity Laddered Overlay'(옵션 헤지)처럼 **환헤지가 아닌**
+      상품이 섞인다 — 환위험 헤지를 물으면 `Hedged` 로 좁힌다.
+      🔴 미국 투자 상품의 환헤지는 **원화 투자자 관점**이다 — 달러 자산을 달러로 사면 헤지 개념이 다르다.
+      "환헤지된 미국 ETF" 는 국내 상장 (H) 상품(43건)을 뜻하는 경우가 많으니 어느 쪽인지 밝히고 답한다.
+  전략텍스트_분류금지: >-
+    🔴 `cu_strtegy` 는 분류 컬럼이 아니다 — 투자설명서 문장 텍스트(고유값 5,943종)다.
+    여기에 LIKE 를 걸어 상품을 분류하지 않는다. 서버 실측 2026-09-02 — "월배당 ETF" 에
+    `cu_strtegy LIKE '%Monthly Income%'` 가 나가 NEOS 계열 문구 37건만 걸리고
+    JEPI(순자산 461억$)·JEPQ(412억$)·QYLD 같은 대표 월배당 상품이 전부 빠졌다.
+    분류는 상품명(pd_nm)·기초지수(cu_base_index)·플래그 컬럼으로만 한다.
+  월배당_해외한계:
+    triggers: [월배당, 월지급, 매월, 매달, 다달, 분배, 배당주기, Income]
+    text: >-
+      🔴 해외 테이블에는 **분배주기 컬럼이 없다** (국내의 pd_dvid_cycl 같은 것이 없음).
+      "월배당 해외 ETF" 를 정확히 판별할 수 없다 — 이름 기반 근사만 가능하다:
+      `' '||replace(...)||' ' LIKE '% Income %'`(단어경계_필수 형식) 또는 'BuyWrite'·'Premium Income'.
+      답변에 반드시 한계를 밝힌다 — "해외 상품은 분배 주기 데이터가 수록되어 있지 않아
+      상품명 기준 근사입니다". 질문이 국내를 배제하지 않았다면 **국내 월분배(월분배 규칙,
+      pd_dvid_cycl='M' — ETF 196건)를 함께 또는 우선** 제시한다. cu_strtegy 사용 금지(전략텍스트_분류금지).
+  현재가_실시간아님:
+    triggers: [현재가, 지금, 실시간, 시세, 가격, 얼마, 주가, 오늘, price]
+    text: >-
+      🔴 `ru_mkt_price`·`ru_mkt_volume` 를 **SELECT 하지 않는다** — 종가·거래량 복사본이다
+      (실측 2026-09-04: 각각 du_clpr·du_vol_1d 와 6,023/6,037 동일). `du_clpr AS 종가USD`,
+      `du_vol_1d AS 일거래량주` 를 쓴다.
+      🔴 해외 스키마의 컬럼 라벨이 "**실시간** 현재가/거래량" 인 것은 주최 원본 헤더의 표기일 뿐
+      우리 DB 의 사실이 아니다 — 라벨을 믿고 '실시간' 이라고 답하면 8/21 종가를 현재가로 파는 오답이 된다.
+      🔴 답변에 기준일을 밝힌다 — 종가 기준일은 `du_clpr_base_dt`(5,687건이 2026-08-21, 나머지는 행마다 다름)를
+      함께 SELECT 해 그 값을 쓴다. 상장폐지·데이터 껍데기 14건(du_clpr NULL)은 제외한다.
+  개수만_준_질의: >-
+    🔴 `LIMIT N` 을 `ORDER BY` 없이 두지 않는다. 축이 문장에 없으면 기본 정렬은
+    **순자산 내림차순** `ORDER BY du_last_aum DESC` 이고 답변에 그 기준을 밝힌다(국내와 동일 방침).
+    서버 실측 2026-09-01 — "미국 반도체 ETF" 가 `ORDER BY pd_nm ASC`(알파벳)로 나왔다.
+    이번엔 17행 전부 실려 무해했지만, 결과가 LIMIT 30 을 넘는 섹터면 **알파벳 앞쪽만 잘려 나간다**.
+    ⚠️ du_last_aum 은 NULL 205건·0값 11건이 뒤로 밀린다 — Top-N 답변에 한 줄로 밝힌다.
+  개별조회_별칭:
+    triggers: [정보, 뭐야, 어떤, 알려, 소개, 설명]
+    text: >-
+      🔴 개별 상품 정보 조회("VOO 정보 알려줘")에 **`SELECT *` 를 쓰지 않는다.**
+      49개 컬럼이 암호 같은 원어 이름으로 답변기에 넘어가면 오독한다 — 서버 실측 2026-09-01, VOO 한 답변에서 4건:
+      ① `pd_us_cik`(SEC 등록번호) 36405 를 **"시가총액 36405백만 달러"** 로(실제 순자산 du_last_aum ≈ 9,973억 달러)
+      ② `du_er_1d`(1일 수익률) 0.39 를 **"추적오차 0.39%"** 로(해외에 추적오차 컬럼은 없다)
+      ③ `du_vol_1d` 10,712,821 을 **"107,128,210 주"** 로(자릿수 10배)
+      ④ 설정일을 **2000-04-30 으로 창작**(pd_lstg_dt=20100907 인데).
+      형식 — 필요한 컬럼만 **AS 한글 별칭**으로:
+      `SELECT pd_nm AS 상품명, TRIM(pd_abrv_nm) AS 티커, cu_base_index AS 기초지수,
+      NULLIF(cu_charge_rt,0) AS 연간보수율pct, pd_lstg_dt AS 설정일, cu_fund_mgmt_co AS 운용사,
+      cu_index_repl_mthd AS 복제방식, du_clpr AS 종가USD, du_vol_1d AS 일거래량주,
+      du_last_aum AS 순자산USD, wu_inv_ast_type AS 자산군, wu_inv_rgn AS 투자지역
+      FROM overseas_etfs WHERE TRIM(pd_abrv_nm) = '<티커>'`
+      별칭이 곧 답변 어휘가 되므로 답변기가 컬럼을 헷갈릴 여지가 없다.
+
+# ── 국내ETF 대비 비대칭 요약 (교차질의 주의) ──
+domestic_asymmetry:
+  해외에_없는_것: [위험등급, 연/YTD/기간수익률(1일만 있음), axis정답축, 상폐일컬럼]
+  해외가_나은_것: [총보수(결측0%), AUM(결측3.4%), 식별자(ISIN/Lipper/CIK), 레버리지부호(국내는 2차에서 소실)]
+  언어차이: 자산군·지역 영문 (국내는 한글)
+  지역입도: 59종 국가단위 (국내는 11종 대분류)
+
+# ── 외부 구성종목 조인 (2026-08-27 A-3-02·A-4-04 검토 확정) ──
+external_join:
+  ext_ovs_etf_holdings:
+    # 🔴 ISIN 으로 조인하면 **다른 ETF 의 구성종목이 붙는다.**
+    #    실증: FILL.K(iShares MSCI Global Energy Producers)를 ISIN 조인하면 69행이 붙는데,
+    #          그 69행은 POWR(iShares US Power Infrastructure)의 구성종목이다. 전혀 다른 상품이다.
+    #    원인: pd_isin_cd 가 두 상품에 걸린 케이스(A-2-03)에서 외부 데이터는 한쪽 티커만 갖고 있다.
+    key: "ext_ovs_etf_holdings.etf_ticker = replace(replace(overseas_etfs.pd_itm_no,'.K',''),'.O','')"
+    forbidden_key: "isin = pd_isin_cd   # 사용 금지 — 오배정 8건 확인"
+    misassigned_if_isin: [CCMG.K, STXF.K, SIXG.O, GSWO.K, FILL.K, FIBR.K, IEQ, SPLG.K]
+    coverage: "티커 조인 1,358 상품 / 마스터 6,037 (22.5%) · 오배정 0"
+    caveat: >-
+      접미어 제거 후 base 티커가 마스터에 2행인 경우 6건 — **전수 확인 결과 실제 위험 0**.
+      실제로 2상품에 붙는 것은 JEMA(544행)·SHV(65행) 둘뿐이고, 둘 다 ISIN·운용사·종가·상장일이
+      완전히 같고 거래소만 갈리는 **동일 상품 2회 등록**이라 같은 구성종목이 붙는 게 맞다.
+      나머지 4건(JOYT·LVDS·NERD·SMCC)은 외부 데이터에 해당 티커가 **0행**이라 아무것도 붙지 않는다.
+      ⚠️ SMCC 는 SMCC.K(Corgi SMCI 2x Daily, Corgi Strategies)와 SMCC.O(Defiance Leveraged Long+Income SMCI,
+      Tidal Investments)로 **서로 다른 상품**이지만, 외부 수집분이 0행이라 현재 데이터에서는 배정 문제가 발생하지 않는다.
+      향후 외부 데이터에 SMCC 가 들어오면 그때 배정 판단이 필요하다 —
+      판단 순서: ① 외부에 티커 존재 여부 ② 구성종목 내용이 어느 상품과 맞는지 ③ seriesId/accession 으로 발행사 역추적.
+    report_date: "2025-10-31 ~ 2026-06-30 (8종)"
+    answer_policy: >-
+      🔴 해외 구성종목 답변에는 **상품별 report_date 를 반드시 병기**한다.
+      마스터 기준일(2026-08-22) 대비 **2~10개월 전**이다 — SEC N-PORT 분기공시 주기라 구조적이며 개선 불가.
+      국내(1일 전)와 달리 '현재 구성' 으로 단정하면 오답. '최신 시세와 시점이 다르다' 고 밝힌다.
+      분포: 2026-04-30(463) · 2026-05-31(404) · 2026-03-31(366) · 2026-06-30(98) · 2026-05-29(20) ·
+      2026-01-31(1) · 2025-11-30(2) · 2025-10-31(2).
+
+# ── 역질문 분기 — 되묻기는 답변불가 문항의 정답 형태 중 하나 (주최 확인 8/25) ──
+#    국내(domestic_etfs.clarify)와 같은 방침. 여기엔 해외 전용 사례만 둔다.
+clarify:
+  존재하지_않는_개체:
+    원칙: >-
+      🔴 정확 일치가 없으면 답하지 않는다. 유사 이름으로 대체 조회해 놓고
+      원래 이름으로 답하면 감점이다. 유사 후보는 버리지 말고 **역질문으로 제시**한다.
+    답변형태: '"○○ 은(는) 제공 데이터에 없습니다. 혹시 △△ 를 말씀하신 건가요?"'
+    실측_사례:
+      티커_ZZZZ: >-
+        🔴 함정 — `ZZZZ` 는 0건이지만 **`ZZZ.O` 가 실재**한다(Cyber Hornet S&P 500 and Bitcoin 75/25 Strategy ETF · 총보수 0.95%).
+        앞자리가 겹친다고 붙이면 안 된다. 티커는 **완전 일치**로만 판정하고,
+        유사 후보가 있으면 되묻는다.
+      해외_위험등급: >-
+        해외ETF 는 위험등급 컬럼 자체가 없다(_absent_columns). "위험등급 N등급인 해외ETF" 는
+        등급 범위를 따지기 전에 **컬럼 부재**로 답변 불가 — 국내ETF 로 유도하거나 미제공 안내.
+      해외_기간수익률: >-
+        du_er_1y·ytd·1m/3m/6m 컬럼이 없다. 주최 답변(OQ-2)으로 "해외 ETF 는 제외해도 무방" 확정.
+    금지: 유사도만 보고 티커·상품명을 붙이지 말 것. 접두사 일치는 근거가 아니다.
+  다의어:
+    안전한: 위험등급 컬럼이 없으므로 국내ETF 기준을 그대로 쓸 수 없다. 자산군·레버리지 여부로 답하되 기준을 밝힌다.
+    레버리지: "🔴 배수만 보면 인버스가 섞인다(901건 중 131건). query_rules.레버리지_인버스혼입경고 참조"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 🔴 해외ETF 상품명은 **한글이 0건**(6,037건 전부 영문)이다.
+# 사용자는 한글로 묻는데 DB 에는 한글이 없으므로, 이 표가 없으면 LIKE 가 통째로 0건을 낸다.
+# 국내ETF 는 정반대다(상품명 한글 1,779 / 지수명 한글 0 — ref_base_index 기준, cu_base_index 는 27) — 두 테이블의 동의어 방향이 서로 뒤집혀 있다.
+# 평면 문자열 1:1 유지 · 값은 공백 제거형 · 짧은 값은 query_rules.단어경계_필수 를 반드시 함께 적용.
+synonyms:
+  # 운용사 한글 음차 — 국내 브랜드 음차와 같은 이유(2026-09-01)
+  뱅가드: Vanguard
+  블랙록: BlackRock
+  아이셰어즈: iShares
+  # ── 지역
+  미국: US                 # 🔴 2글자 — 단어경계 필수. 부분일치 1,330 vs 단어경계 678 (오탐 652)
+  중국: China
+  일본: Japan
+  인도: India
+  유럽: Europe
+  신흥국: Emerging
+  # ── 자산군·유형
+  반도체: Semiconductor
+  배당: Dividend
+  고배당: Dividend
+  # 🔴 bare `국채` 는 뺐다 — 채권 도메인 소유 어휘. 넣으면 "국채 알려줘" 가 해외ETF 로 새어
+  #     tests/test_router.py:66 이 깨진다(2026-08-31 실측). 3자인 `미국채` 는 안 걸린다.
+  미국채: Treasury
+  리츠: REIT
+  부동산: RealEstate
+  금: Gold                 # 국내와 달리 해외는 1글자 문제가 없다(영문 Gold 로 치환되므로)
+  은: Silver
+  원유: Oil
+  커버드콜: CoveredCall
+  월배당: Income           # 🟡 Income 534건은 커버드콜·옵션프리미엄까지 포함 — 월배당과 동의어가 아니다
+  성장주: Growth
+  가치주: Value
+  소형주: SmallCap
+  # ── 테마
+  AI: AI
+  인공지능: AI              # 🔴 2글자 — 부분일치 840 vs 단어경계 54 (오탐 786, 93.6% — 2026-09-02 재계수)
+  로봇: Robot
+  우주항공: Aerospace
+  방산: Defense
+  바이오: Biotech
+  헬스케어: Health
+  비트코인: Bitcoin
+  이더리움: Ether
+  # ── 지수 (공백 제거형)
+  에스앤피500: S&P500
+  나스닥: Nasdaq
+  러셀2000: Russell2000
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 해외ETF 상품명에 실린 정보와 **대응 컬럼 유무**. 국내(domestic_etfs.name_encoding)와 비대칭이다.
+# 원칙은 같다 — 대응 컬럼이 있으면 컬럼을 쓴다. 이름은 컬럼이 없거나 값이 소실된 경우에만.
+# 🔴 영문 이름이라 짧은 토큰의 오탐이 국내보다 훨씬 심하다. query_rules.단어경계_필수 를 반드시 함께 볼 것.
+name_encoding:
+  has_column:
+    설명: 대응 컬럼이 있다. 이름으로 판정하지 말 것
+    인버스숏: {컬럼: cu_inverse_short_yn, 이름표기: "Inverse 20 · Short 213 · Bear 53", note: 국내와 달리 플래그가 정상이다}
+    레버리지배수:
+      컬럼: cu_lev_fector
+      이름표기: "2X 644 · 3X 70 · 1.5X 5 · Ultra 163 · Leveraged 30"
+      note: >-
+        🔴 그런데 컬럼이 5,136/6,037(85%) 결측이다. 값이 있는 901건은 정상(2.0 677 · -2.0 92 · 3.0 60 · -3.0 34).
+        결측 행은 이름의 `2X`/`3X` 로 보완할 수밖에 없다 — 국내(부호 소실)와는 결측의 성격이 다르다.
+    ETF_ETN: {컬럼: pd_grp_no, 값: "ETF 5,972 · ETN 65", note: "이름의 `ETN` 으로 세지 말 것 — 부분일치 71건 중 12건이 오탐(An(t)i-Be(t)a·Naviga(t)or)"}
+  name_only:
+    설명: 대응 컬럼이 없어 이름이 유일 근거
+    Daily: {건수: 688, 뜻: 일간 재조정. 레버리지·인버스 상품의 표지이자 장기보유 시 복리 이탈이 생기는 근거}
+    CoveredCall: {건수: 34, note: "국내는 지수명에 있는데(ref_base_index) 해외는 상품명에 있다"}
+    Income: {건수: 534, 단어경계: 530, note: "🟡 월배당과 동의어가 아니다 — 커버드콜·옵션프리미엄·채권이자가 전부 포함된다"}
+    Hedged: {건수: 69, note: "국내 `(H)` 230건에 대응. 표기 형태가 다르다"}
+    Bull: {부분일치: 134, 단어경계: 91, note: "🔴 오탐 43건 중 38건이 Invesco **Bullet**Shares(만기채권 ETF)·2건 Bullish·3건 WBI BullBear 다. 강세형이 아니다"}
+    BullBear: {건수: 3, note: "🔴 양방향이 아니라 **하락장 방어 기능이 탑재된 상승 추종** 펀드다(WBI 3종, cu_strtegy 원문 확인). 인버스로 분류 금지"}
+  전략은_컬럼이_아니다:
+    설명: >-
+      🔴 국내 `cu_strtegy` 는 4개짜리 범주값(실물복제 763·액티브 358·합성복제 82·C 422)인데
+      해외 `cu_strtegy` 는 **고유값 5,943/6,037 의 자유서술 영문 산문**이다(펀드 운용목표 문장).
+      같은 이름의 컬럼이지만 성격이 완전히 다르다 — 해외에서 `cu_strtegy = '액티브'` 같은 조건을 만들면 0건이 나온다.
+      해외의 액티브 여부는 상품명 `Active`(169건)로 볼 수밖에 없다.
+  위험토큰:
+    설명: 🔴 이 토큰들은 부분일치로 쓰면 안 된다. 실측 오탐률
+    TR: {부분일치: 1531, 단어경계: 14, 오탐률: "99%", 예: "AAM **Tr**ansformers · In**tr**insic"}
+    AI: {부분일치: 865, 단어경계: 54, 오탐률: "94%", 예: "Ch**ai**nlink · D**ai**ly"}
+    Acc: {부분일치: 41, 단어경계: 6, 오탐률: "86%", 예: "ATAC Credit Rot**a**tion"}
+    US: {부분일치: 1330, 단어경계: 678, 오탐률: "49%", 예: "Pl**us** · Tr**us**t · Foc**us**"}
+    Short: {부분일치: 255, 단어경계: 213, 오탐률: "16%", 예: "**UltraShort** Income — 방향이 아니라 만기가 짧다는 뜻"}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 답변 생성 규약 — loader.answer_context() 가 답변 단계에 싣는다.
+# 🔴 국내ETF 와 비대칭이 심하다. 국내 규칙을 그대로 옮겨 말하면 대부분 틀린다.
+answer_rules:
+  - '🔴 가격·거래량을 답할 때 "실시간"·"현재 시점" 이라고 말하지 않는다 — 우리 데이터의 현재가 컬럼은 종가 복사본이다(실측 2026-09-04). 반드시 기준일을 병기한다: 2026-08-21 종가 기준.'
+  - '🔴 목록 답변의 상품명·티커는 SELECT 로 받은 문자열을 **글자 그대로** 쓴다. 정식명을 축약·재조합하지 않는다 (국내 실측 2026-09-02 KoAct 브랜드 소실과 동일 방침).'
+  - 'Top-N·추천 목록에는 **실제 SQL 이 정렬한 축**을 한 줄 밝힌다 — 순자산 정렬이면 "순자산 규모 기준", 개수 정렬이면 "보유 ETF 개수 기준". 🔴 예문을 그대로 베끼지 말 것 — 서버 실측 2026-09-03: 개수 기준 집계에 "순자산 규모 기준 상위 5개입니다" 가 복사돼 나갔다(축 오표기).'
+  - '🔴 투자 권유·조언으로 읽히는 꼬리 문장을 붙이지 않는다 — "투자 목표와 리스크 허용 범위 확인"·"주기적인 모니터링 필요" 류 (서버 실측 2026-09-02 월배당 답변). 수치와 사실만 전하고 판단은 사용자에게 남긴다.'
+  - 🔴 최우선 — 조회 결과에 없는 상품명·수치·날짜를 만들지 않는다(환각 = 대회 최대 감점). 칸이 비어 있으면 '수록되지 않음' 이라 말한다.
+  - '🔴 기간 수익률이 없다. 해외ETF 수익률 컬럼은 `du_er_1d`(1일) **하나뿐**이고 국내에 있는 1m·3m·6m·ytd·1y 가 전부 없다. ''1년 수익률 좋은 미국 ETF'' 같은 질의에는 ''이 데이터셋에는 해외ETF 의 기간 수익률이 수록되지 않았습니다(1일 수익률만 제공)'' 로 답한다. 1일 수익률로 순위를 매겨 ''수익률 상위'' 라 말하지 않는다. 주최 답변 OQ-2 로 ''해외 ETF 는 제외해도 무방'' 확정.'
+  - '🔴 위험등급 컬럼이 없다. 국내의 `pd_risk_nm`(1~6등급) 에 해당하는 것이 해외에는 없으므로 ''안전한 해외 ETF'' 를 등급으로 답할 수 없다. 자산군(wu_inv_ast_type)·레버리지 여부로 답하되 **무엇을 기준으로 골랐는지 반드시 밝힌다.**'
+  - '총보수(cu_charge_rt)는 유효 5,618 / 6,037(93%)로 국내(67건 · ETF 1,235 기준 5.4%)와 정반대다. 해외는 총보수를 정상적으로 말해도 된다 — 국내용 ''수록되지 않음'' 문구를 그대로 쓰지 않는다. 결측 419건만 미수록으로 말한다.'
+  - '🔴 레버리지 배수(`cu_lev_fector`)가 5,136/6,037(85%) 결측이다. 값이 있는 901건은 대체로 부호가 정상이나(예외 3건 — RAMZ·SNK·METQ 는 인버스인데 +2.0)(2.0 677 · -2.0 92 · 3.0 60 · -3.0 34), 결측 행을 ''레버리지 아님'' 으로 말하면 안 된다. 이름의 `2X`·`3X`·`Ultra` 를 함께 본다.'
+  - '인버스·숏 판정은 `cu_inverse_short_yn` 플래그가 정본이다(국내와 달리 정상 작동). 다만 이름만으로 걸리는 5건이 있으므로 query_rules.인버스숏 조건을 그대로 쓴다. `UltraShort + Bond/Treasury` 는 방향이 아니라 **만기가 짧다**는 뜻이고, `BullBear`(WBI 3종)는 양방향이 아니라 **하락장 방어형 롱 펀드**다 — 둘 다 인버스라 말하지 않는다.'
+  - '`Daily` 가 이름에 있으면(688건) 일간 재조정 상품이다. ''N배 수익'' 이 아니라 **하루 단위** 배수이며 장기 보유 시 복리 이탈이 생긴다는 점을 한 줄 덧붙인다.'
+  - '🔴 구성종목을 말할 때 ISIN 으로 붙인 결과를 쓰지 않는다. `ext_ovs_etf_holdings.isin` 은 **그 ETF 자신의 ISIN** 이라 조인하면 남의 종목이 붙는다 — 실측 오배정 8건(FILL.K 가 POWR 의 구성종목 69행을 받았고 SPDR S&P500 도 포함). 티커 조인만 쓴다(query_rules.ISIN조인금지).'
+  - '기준일을 병기한다. 종가 기준일(du_clpr_base_dt)이 상품마다 다르다 — 2026-08-21 이 5,687건이지만 **313건은 8월 이전**이고 가장 오래된 것은 2025-07-28 이다. 오래된 행은 그 날짜를 그대로 말하고 최신 시세처럼 말하지 않는다.'
+  - 상품명은 키가 아니다 — 중복 28건이 있다. 상품을 특정할 때는 종목코드(pd_itm_no)를 함께 적는다. ISIN 도 키가 아니다(6,037행 vs distinct 5,962 · NULL 12).
+  - '통화는 사실상 전부 USD 다(6,025 / INR 1건 · 결측 11). 금액을 말할 때 달러임을 밝히고, 국내ETF(원화)와 한 표에 섞어 크기를 비교하지 않는다. 유일한 INR 상품 `TBF`(Tata Aggressive Hybrid)는 인도 루피 표시다.'
+  - '해외ETF 테이블에도 ETN 65건이 섞여 있다(pd_grp_no). ''ETF'' 를 물었으면 5,972건만으로 답한다. 🔴 이름의 `ETN` 으로 세지 말 것 — 부분일치 71건 중 12건이 오탐이다.'
+  - '운용전략을 말할 때 `cu_strtegy` 를 범주로 쓰지 않는다. 국내는 4개짜리 범주값이지만 해외는 **고유값 5,943개의 자유서술 영문 산문**(펀드 운용목표 문장)이다. 인용할 거면 요약해서 말하고, ''전략 = 액티브'' 같은 분류로 쓰지 않는다.'
+  - '🔴 영문 약어를 부분일치로 세어 답하지 않는다. ''AI ETF 몇 개'' 에 840 이라고 답하면 786건이 오탐이다(Ch**ai**nlink·D**ai**ly). 정답은 54건이다. `TR` 은 1,531 중 14건만 진짜다. query_rules.단어경계_필수 형식을 쓴다.'
+  - '한글로 물어도 상품명은 전부 영문이다(한글 0 / 6,037). 상품명을 한글로 번역해 말하지 말고 원문 그대로 적되, 필요하면 괄호로 뜻을 덧붙인다.'
+  - 추천·랭킹 답변은 기본 5개, 질문에 개수가 있으면 그 개수까지. 정렬 기준(순자산 큰 순 등)을 한 마디 밝힌다. 조회 결과에 없는 상품을 예로 들지 않는다.
+  - '`레버리지`·`인버스`(cu_lev_fector 결측이면 이름의 2X·3X·Ultra·Bear·Short) 상품이 답변 목록에 있으면 붙인다: ''레버리지·인버스 상품은 일간 수익률을 배수로 추종해 장기 보유 시 지수 등락률과 크게 달라질 수 있습니다.'' 조건이 아니면 붙이지 않는다. 서버 실측 2026-09-01: "미국 반도체 ETF" 답변에 SOXL(3x)·SOXS(-3x)·TSXU·TSXD·XSEM(2x)·USD(2x) 가 섞였는데 문구가 없었다.'
+  - '보수 수치에 ''높은''·''낮은'' 같은 판단을 붙이지 않는다 — 수치를 그대로 말한다. 서버 실측 2026-09-01: 0.99% 를 근거 없이 ''높은 보수'' 라고 단정했다.'
+  - '🔴 `pd_us_cik` 는 SEC 등록번호(CIK)다 — 시가총액·규모·금액으로 말하지 않는다. 서버 실측 2026-09-01: VOO 의 CIK 36405 가 "시가총액 36405백만 달러" 로 나갔다(실제 순자산 약 9,973억 달러). 규모는 du_last_aum 만 쓴다.'
+  - '해외ETF 에 **추적오차 컬럼은 없다.** du_er_1d 는 1일 수익률이고 du_diff_rt 는 종가-NAV 괴리율이다 — 어느 쪽도 추적오차로 말하지 않는다. 추적오차를 물으면 "수록되어 있지 않습니다". 서버 실측 2026-09-01: du_er_1d 0.39 가 "추적오차 0.39%" 로 나갔다.'
+  - '수치는 조회 값 **그대로** 옮긴다 — 자릿수·단위를 임의로 바꾸지 않는다. 서버 실측 2026-09-01: 거래량 10,712,821 이 "107,128,210 주" 로 10배 커졌다. 날짜(pd_lstg_dt=설정일)는 YYYY-MM-DD 로 읽어 말하되 **조회에 없는 날짜를 만들지 않는다** — 설정일 2000-04-30 창작 실측.'
+
+# ── 부재 속성 — 해외 ETF 에 컬럼 자체가 없는 축 ────────────────────────────
+# 🔴 2026-09-05 신설. 그 전까지 이 파일에는 absent_properties 가 **한 건도 없었다.**
+#    ttl(etf_gl) 에는 hasRiskGrade·hasCreditGrade 가 ABSENT 로 나가는데, 런타임 게이트가 읽는
+#    것은 ttl 이 아니라 이 목록이다. 비어 있었으므로 주최가 감점 대상으로 명시한 '답변 불가'
+#    질의가 전부 Gate 를 통과해 HCX 를 호출했다.
+#    서버 실측 2026-09-05 — "최근 3개월 수익률 좋은 해외 ETF" 가 du_er_1d(1일 수익률)를
+#    `최근3개월수익률` 이라는 별칭으로 위장해 30행을 자신 있게 답했다. 감점 확정 사례다.
+#    정규식은 홑따옴표로 쓴다 — 쌍따옴표 YAML 은 \d 를 이스케이프로 먹는다.
+absent_properties:
+  # 🔴 2026-09-06 D2 실측 신설 — "최근 한 달 자금 유입이 많은 ETF" 가 국내+해외 2테이블로 라우팅돼
+  #    게이트를 통과했다(부재 선언은 단일 테이블일 때만 봤다). 해외도 같은 축이 없으므로 함께 선언한다.
+  - property: hasFundFlow
+    why: "해외 ETF 의 자금 유출입(설정·환매 금액)은 수록되어 있지 않습니다. 순자산은 기준일 한 시점의 값이라 증감을 계산할 수 없고, 거래대금은 사고판 금액이라 유입액과 다릅니다."
+    vocab: ["자금[ ]?(?:유입|유출|유출입|순유입|순유출)", "(?:자금|돈)이.{0,12}?(?:몰리|몰린|몰렸|빠져|빠진|빠졌)", "설정액[ ]?(?:증가|감소|추이)", "(?:유입|유출)액"]
+    substitute: {column: "du_last_aum", note: "기준일 시점의 순자산과 거래대금은 안내할 수 있습니다 — 둘 다 자금 유출입과는 다른 축입니다."}
+
+  - property: hasPeriodReturn
+    why: "해외 ETF 는 1일 수익률(du_er_1d)만 수록되어 있고 1개월·3개월·6개월·1년 등 기간 수익률은 수록되어 있지 않습니다."
+    vocab: ['(?:\d+\s*(?:개월|년|주)|최근\s*\d+\s*(?:개월|년)|연간|누적|YTD|올해)\s*(?:수익률|성과|리턴)']
+    substitute: {column: "du_er_1d", note: "1일 수익률은 안내할 수 있습니다. 기간 수익률은 국내 ETF 에만 수록되어 있습니다."}
+  - property: hasTrackingError
+    why: "해외 ETF 는 추적오차(du_chas_errt)가 수록되어 있지 않습니다. 국내 ETF 에만 있는 컬럼입니다."
+    vocab: ['추적\s*오차', '트래킹\s*에러', '(?i)tracking\s*error']
+    substitute: {column: "du_diff_rt", note: "종가 대비 추정 NAV 괴리율은 수록되어 있으나 3건뿐이고, 추적오차와는 다른 지표입니다."}
+  - property: hasRiskGrade
+    why: "해외 ETF 는 위험등급 컬럼 자체가 없어 확인할 수 없습니다. 국내 ETF 의 1~6등급 체계는 해외에 적용되지 않습니다."
+    vocab: ['위험\s*등급', '투자위험등급']
+    substitute: {column: "wu_inv_ast_type", note: "자산군·레버리지 여부·인버스 여부로는 위험 성격을 안내할 수 있습니다."}
+  - property: hasCreditGrade
+    why: "ETF 는 발행사 신용등급을 갖지 않아 확인할 수 없습니다. 신용등급은 채권 발행사에 부여되는 것입니다."
+    vocab: ['신용\s*등급', '신용도', '크레딧\s*등급']
+    substitute: {column: null, note: "해외 ETF 에는 위험등급도 없어 대체 축이 없습니다 — 자산군으로만 안내합니다."}
+  - property: hasDividendYield
+    why: "해외 ETF 는 분배율·분배주기가 수록되어 있지 않습니다. 국내 ETF 에만 있는 컬럼입니다."
+    vocab: ['분배율', '분배\s*주기', '배당수익률', '배당률']
+    substitute: {column: "pd_nm", note: "상품명에 Income·Dividend 가 든 상품은 찾을 수 있으나 분배율 수치는 없습니다."}
+  - property: hasPensionEligibility
+    why: "해외 ETF 는 연금계좌 거래가능 여부가 수록되어 있지 않습니다. 국내 ETF 에만 있는 컬럼입니다."
+    vocab: ['연금', 'IRP']
+    substitute: {column: null, note: "국내 ETF 에서는 연금거래 가능 여부를 안내할 수 있습니다."}

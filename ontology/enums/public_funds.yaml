@@ -1,0 +1,1536 @@
+# public_funds — 사람의 판단을 담는 파일
+# 기계적 사실은 *.auto.yaml 에 있습니다. 여기엔 판정과 규칙만 씁니다.
+# 런타임 가드레일이 이 파일을 읽습니다.
+#
+# 이력:
+#   2026-08-25  🔴 2차 데이터(8/24 배포 · 기준일 2026-08-22) 기준 재작성.
+#               1차(7/11) 의 "종목×속성태그 롱 포맷"(95,619행) 구조가 사라지고 23,676행 × 75컬럼 · itm_no 유일.
+#               prfd_attr_cd 삭제 → prfd_attr_cds(쉼표 목록) 로 집약. 보수 4종·클래스 체계·제로인 유형·자산구성비 신규.
+#               🔴 1차 기준 수치(11,139종목·8,445 판매중·오염 9종목 등)를 인용한 다른 문서는 전부 구식이다.
+#               1차 분석에서 2차로 재검증하지 못한 판정은 "(1차 실측)" 으로 표기해 남겼다.
+
+domain: public_funds
+
+# 리드 결정 2026-08-31 (§12-6 결정 5) — 사실상 빈 컬럼·답변금지 컬럼을 스키마 프롬프트에서 제외한다.
+# 스키마 서두가 "여기 없는 컬럼은 존재하지 않는다" 이므로, 제외 = 플래너가 참조 자체를 못 함.
+# 질의 대응은 answer_rules('1주 수익률 미수록' 안내)와 평가문항 FND-R02 가 담당한다.
+schema_exclude:
+- fd_wk1_ern_r     # 1주수익률 — 23,676/23,676 전건 결측 (08-31 재실측)
+- fd_prsv_r        # 답변금지 (컬럼 정책)
+- fd_sbpr          # 답변금지 (컬럼 정책)
+- itm_eabrv_nm     # 영문약어명 — 99.4% 결측, 영문명 안내는 itm_eng_nm 경로만(§6-1 정정)
+
+# ── 행의 낟알(row grain) — 이 테이블의 구조 그 자체 ──────────────────────
+row_grain:
+  구조: 행 = 종목(itm_no) — 클래스 단위 마스터. 23,676행 = 23,676 distinct itm_no · NULL 0
+  evidence_grade: A
+  증명: >-
+    🔑 2026-08-25 2차 데이터 실측 — itm_no 가 행 단위로 완전 유일하다 (profile_table primary_key 탐지기 확인).
+    1차의 행 폭발 원인이던 prfd_attr_cd 가 삭제되고 prfd_attr_cds(쉼표 구분 목록) 로 집약됐다.
+    따라서 "COUNT(*) 금지 · GROUP BY itm_no 선행" 규칙은 **폐기**한다 — 행 = 종목이다.
+  std_itm_no의_위치: >-
+    std_itm_no 는 클래스 묶음 키가 **아니다** — distinct 18,948 중 18,909 가 itm_no 와 1:1 이고
+    2개 이상 itm_no 를 가리키는 값은 39개뿐. 결측 515 + '00000       '(패딩 위장결측) 145 = 실질 결측 660 —
+    **전부 판매완료**. 펀드(클래스 묶음) 단위 키는 여전히 (or_co_xtn_itt_cd, mtco_itm_no) 합성키다 (query_rules.펀드단위).
+  answer_policy: >-
+    상품 개수 질의: 행수 = 종목(클래스) 수 23,676. 단 🔴 **사모 8,960행이 섞여 있다** (1차엔 168행) —
+    '공모펀드' 개수는 prvo_pbff_desc='공모' 14,716, 그중 판매중 8,969. 모수를 반드시 밝힐 것.
+
+columns:
+  # ── 식별 ────────────────────────────────────────────────────────────
+  itm_no:
+    korean_name: 종목번호
+    missing_reason: none
+    note: "식별 기준 키 · 행 PK(23,676 완전 유일). 개수·조인·식별은 이 컬럼으로. (2026-08-29 B-1-60 신설 — DB 재현: count=distinct=23,676)"
+  std_itm_no:
+    korean_name: 표준종목번호
+    missing_reason: missing
+    evidence_grade: A
+    missing_semantics:
+      '00000       ': missing          # 🔴 2차 신규 위장결측 — 5자리 0 + 공백 7 = 12자 패딩 145행 (2026-08-31 리터럴 폭 정정). trim 후 '00000'
+    evidence: >-
+      2026-08-25 실측 — NULL 515 · '00000       ' 145 = 660행, 전부 sale_yn='판매완료'. 판매중 결측 0.
+      1차의 "따옴표 오염 9종목" 은 2차에서 **소멸**(contaminated_rows 감지 0행).
+    answer_policy: >-
+      결측 시 sale_yn 을 직접 읽어 병렬 서술 — '판매완료 상품이며 표준종목번호는 조회되지 않습니다'.
+      인과로 서술 금지(판매완료 12,714 중 12,054 는 값 보유). 식별은 itm_no 로 한다.
+  rptt_ksd_itm_no:
+    korean_name: 대표예탁원종목번호
+    missing_reason: unresolved
+    evidence_grade: C
+    evidence: 2026-08-29 — NULL 116 + 더미 6,970 = 7,086행(29.9% · 판매중 116행 1.1%). 더미 대부분 'KR0000000000' 5,308·'000000000000' 1,645. 기전(미부여/말소)은 확정 불가 → 답변 배제(값 없으면 "확인 불가"). 검수 C. (DB 재현 확인)
+    answer_policy: >-
+      결측 시 '확인할 수 없음' + sale_yn 병렬 서술. 인과 서술 금지. 대체 식별자는 ksd_itm_no(결측+더미 2,370, 전체 10.0%).
+    applies_to:
+    - ksd_itm_no
+    - rptt_ksd_itm_no
+  ksd_itm_no:
+    korean_name: 예탁원종목번호
+    missing_reason: unresolved
+    evidence_grade: C
+    answer_policy: 결측·더미 2,370행(전체 10.0% · 판매중 116행 1.1%). 다른 코드가 빌 때 대체 식별자로 제시 가능. 더미('KR'+0패딩·반복문자)는 normalization.dummy_as_missing 으로 배제. (2026-08-29 DB 재현 갱신 — 구 592행/2.5%)
+  fss_itm_no:
+    korean_name: 금융감독원종목번호
+    missing_reason: unresolved
+    evidence_grade: C
+    evidence: >-
+      2026-08-25 — NULL 42 + 더미 '000000000000' 11,611 = 11,653행(49.2%). 판매완료 10,317/12,714 · 판매중 1,336/10,962(12.2%).
+      판매중에서도 비므로 판매상태로 설명 불가(1차 판정 유지).
+    answer_policy: 더미를 값으로 취급 금지(조인 시 한 값에 1만 행이 뭉친다). 결측 시 '확인할 수 없음'.
+    applies_to:
+    - fss_itm_no
+    - kofia_fd_ccd
+  kofia_fd_ccd:
+    korean_name: 금융투자협회펀드분류코드
+    missing_reason: unresolved
+    evidence_grade: C
+    evidence: 2026-08-25 — NULL 45 + 더미 '0'×20 11,431 = 11,476행(48.5%). 판매중 1,158/10,962. fss_itm_no 와 사실상 한 현상.
+    answer_policy: >-
+      더미 배제. 값이 있어도 20자리 자리별 의미 미해독(주최 코드북 미제공 확정) → 코드를 답변에 노출하지 말 것.
+      분류 질의는 zrin_btyp_nm·zrin_ptn_nm·or_attr_desc 등 명칭 컬럼으로 답한다.
+  mtco_itm_no:
+    korean_name: 운용사종목번호
+    missing_reason: missing
+    evidence_grade: C
+    evidence: 2026-08-25 — NULL 116 + 더미 '000000000000' 등 869행(3.7%). 길이 1~12 로 흔들림(선행 0 손실 + 12자리 더미).
+    answer_policy: >-
+      🔴 단독 키로 조인 금지 — 415종의 값이 2개 이상 운용사에 걸친다. 펀드 단위 키는 (or_co_xtn_itt_cd, mtco_itm_no).
+      zero-pad 는 7자리 기준(길이 8 이상의 이상값은 자르지 말 것 — query_rules.펀드단위_근거).
+  itm_eabrv_nm:
+    korean_name: 종목영문약어명
+    missing_reason: missing
+    evidence_grade: A
+    answerable_n: 148
+    answer_policy: >-
+      결측 23,528/23,676(99.4%). 필터·조인 금지. 🔴 "영문 표기는 itm_eng_nm(결측 0) 으로" 는 틀린 안내였다(2026-08-30 정정) —
+      itm_eng_nm 은 NULL 이 0 일 뿐 실제 영문명은 27% 다(itm_eng_nm 참조). 148행 중 '상환일_2018.05.13' 류 메모 6행(전부 판매완료).
+
+  # ── 이름 (2026-08-30 블록 ② 판정 — 검토기록 공모펀드_검토기록_2026-08-30_이름계열.md) ─────────
+  itm_nm:
+    korean_name: 종목명
+    missing_reason: none
+    evidence_grade: A
+    answerable_n: 23676
+    note: >-
+      NULL 0 · 공백 0. 무의미값 3행('00'·'ㅊ'·'DEL', 전부 판매완료) — 이름 컬럼은 dummy_as_missing 화이트리스트 밖이라 규칙을 걸지 않고 note 로만 둔다.
+      🔴 종목명은 키가 아니다 — 45명칭/97행이 중복(판매중 포함 2그룹: '마이다스블루칩배당증권투자신탁 1(주식)C1' 판매완료+판매중 재발행 ·
+      '블랙록월드광업주펀드' 역외 itm_no 2개). 답변 식별은 itm_no.
+    answer_policy: >-
+      상품명 질의는 itm_nm LIKE 부분일치(query_rules.종목명검색). 한 펀드의 클래스(A/C/Ce…)가 각각 한 행이므로
+      부분일치 결과가 복수면 "클래스 n개" 로 묶어 itm_no 를 병기한다. 영문 상품명 질의도 itm_nm 으로 푼다(itm_eng_nm 참조).
+  itm_abrv_nm:
+    korean_name: 종목약어명
+    missing_reason: none
+    evidence_grade: A
+    answerable_n: 23676
+    note: >-
+      NULL 0. 앞뒤 공백 45행(판매중 44 — 꼬리 43행 'GLV             ' 류 + 선행 2행 ' KTB…' 류, 2026-09-02 재계수) → normalization.trim_columns 등재로 처리.
+      itm_nm 과 동일 2,389행 · itm_nm 보다 긴 값 39행. 🔴 클래스를 구분하지 못한다 — 판매중 17그룹이 약어 하나를 공유
+      (다올중국플러스찬스 8클래스가 '다올중국플러스찬스증권(채권혼합)A' 하나). 오매칭 표본 1: '피델리티기간산업' 이
+      '피델리티테크놀로지(판매중지)'(OS555085806M) 에도 붙어 있다.
+    answer_policy: 표시·검색 보조용. 필터·조인·클래스 식별에 쓰지 말 것(같은 약어에 최대 8클래스 · 다른 펀드 1건). 검색은 itm_nm 우선.
+  itm_eng_nm:
+    korean_name: 종목영문명
+    missing_reason: mixed
+    evidence_grade: A
+    answerable_n: 2424          # 판매중·공모 8,969 중 실제 영문명 2,424(27.0%) · 판매중 2,651 · 전체 6,451(27.2%)
+    missing_semantics:
+      itm_nm복사: 13,972행(59.0%) — 한글 종목명이 그대로 들어 있다 (판매중 6,014)
+      대문자화: 2,757행 — itm_nm 을 upper() 한 값('C-Pe'→'C-PE')
+      영한혼합: 318행 — 'MIRAEASSET GLOBAL SOLUTION 40 FUND1(BOND HYBRID)운용' 류
+      운영메모: 177행 — '소규모해지'·'2014.12.10 소규모 임의해지 예정'·'(2014.09.01 상환. 운용사공문)' (🔴 전부 판매완료 · 판매중 0)
+      무의미: 1행 — '0'
+      영문실재: 6,451행 — 라틴 문자가 있고 한글이 없는 값
+    sql_영문실재: (itm_eng_nm <> itm_nm AND itm_eng_nm NOT GLOB '*[가-힣ㄱ-ㅎ]*' AND itm_eng_nm GLOB '*[A-Za-z]*')   # 2026-08-30 실측 6,451 · 판매중 2,651 · 판매중·공모 2,424
+    answer_policy: >-
+      🔴 NULL 0 이 "영문명 있음" 이 아니다 — 73% 가 한글(복사·대문자화). 영문 상품명 질의를 itm_eng_nm LIKE 로 풀지 말 것(itm_nm 으로).
+      영문명을 제시할 때는 sql_영문실재 조건을 만족하는 값만 쓰고, 아니면 "영문명 미제공" 으로 답한다. 운영메모 177행은 판매완료라 기본모수에서 빠진다.
+
+  # ── 판매·구매가능 ──────────────────────────────────────────────────
+  sale_yn:
+    korean_name: 판매여부
+    missing_reason: none
+    evidence_grade: A
+    value_semantics:
+      판매중: 신규 가입 가능 = 🔴 "구매가능" (주최 공지 2026-08-24 — 상폐/리스팅종료 외 전부 구매가능)
+      판매완료: 신규 가입 중단. 청산·종료가 아니다 — 기존 투자자는 남아 있음
+    note: >-
+      2026-08-25 — 판매중 10,962 · 판매완료 12,714. 🔴 1차(판매중 76,318행/8,445종목 · 판매완료 19,300행)와 달리
+      판매완료가 과반이며, 판매완료 행은 평가 컬럼이 대부분 결측이다 — 위험등급 98.9%·1년수익률 99.1%, 순자산 91.6%·제로인 유형 78.5% (2026-09-02 재계수).
+      → query_rules.판매중만 이 모든 집계의 기본 필터다.
+  thco_sale_yn:
+    korean_name: 당사판매여부
+    missing_reason: none        # 빈칸은 결측이 아니라 값이다 (1차 판정 유지)
+    evidence_grade: A
+    value_semantics:
+      'Y': 당사(미래에셋증권) 취급
+      null: 당사 미취급 — 'N' 의 자리. 결측이 아니다. SQL 은 IS NULL 로 걸 것
+    note: >-
+      2026-08-25 — Y 10,597 · NULL 13,079. NULL+판매중 2,412행 중 **사모 1,993** 이 대부분(옛 1,979 는 han_clas_nm 결측 수치의 혼입 — 2026-09-02 정정) —
+      1차의 "NULL+판매중 11종목" 서술은 2차(사모 포함)에서 무효. ✅ 재검증 2026-08-25: NULL+판매중 2,412 = 사모 1,993 + 공모 419 — 공모 419 는 "당사 미취급 공모펀드"로 기본 모수에서 제외하지 말 것(판매중이면 조회 대상).
+    answer_policy: 빈칸의 뜻은 sale_yn·prvo_pbff_desc 와 함께 읽을 것. "당사 미취급이라 정보가 부족" 식 인과 서술 금지.
+  prvo_pbff_desc:
+    korean_name: 사모공모구분코드 설명
+    missing_reason: none
+    evidence_grade: A
+    trap: >-
+      🔴 2차에 **사모 8,960행(37.8%)** 이 들어왔다 (1차 168행). '공모펀드 마스터' 라는 테이블명을 믿고 필터를
+      생략하면 사모가 섞인다. 공모 질의는 query_rules.공모만 필수. 사모 하위: 일반사모 3,286 · 일반사모(2015년전) 3,607 · PEF 7 · 해당없음 2,060.
+  prvo_fd_desc:
+    korean_name: 사모펀드구분코드 설명
+    missing_semantics:
+      해당없음: not_applicable
+    note: 공모 14,716행은 전부 '해당없음'. 사모 안에서만 값이 갈린다.
+  pers_corp_desc:
+    korean_name: 개인법인구분코드 설명
+    missing_semantics:
+      해당없음: not_applicable
+    note: "'해당없음' 19,258 = 개인/법인 전용이 아닌 일반 펀드. 개인 1,912 · 법인 2,506."
+  pfiv_sale_cntl_tcd:
+    korean_name: 판매통제구분코드
+    missing_reason: none
+    note: "'00' 22,263 · '01' 1,378 · '02' 16 · '03' 19. 코드 의미 미제공(주최 확정) — 검수 C 2026-08-25 — '01'~'03' 도 판매중·완료에 고루 분포해 값으로 판매가능 여부를 유추할 수 없음. 어떤 질의에도 사용 금지(배제)."
+
+  # ── 보수 (🆕 2차 신규 — 1차엔 미제공이라 설명서 파싱으로 대체했던 값) ──
+  or_co_rwrd_r:
+    korean_name: 집합투자업자보수 (운용보수)
+    missing_reason: none
+    evidence_grade: B
+    unit: "‰ (값÷10 = %) — ext_fund_page 8,925건 대조로 확정 (2026-08-25)"
+    unit_근거: >-
+      ✅ DB ext_fund_page(미래에셋증권 웹 설명서 파싱)의 mgmt_fee_pct/sale_fee_pct/trust_fee_pct/admin_fee_pct 와
+      마스터 or_co_rwrd_r/sale_co_rwrd_r/trusc_rwrd_r/ofwk_trus_rwrd_r 를 itm_no 로 조인해 8,925건 대조 —
+      비율 master/web 의 중앙값·p10·p90 이 전부 정확히 10.0. 예) 미래에셋인디아솔로몬(C-I) or_co_rwrd_r 10.15 → 운용보수 1.015%.
+      분포(‰): 운용 0~300(max 300 = 30% 는 이상치 후보) · 판매 0~25 · 수탁 0~7 · 사무 0~2.
+    answer_policy: >-
+      **% 로 환산해 서술** (값÷10). 마스터 우선 — 설명서(ext_fund_page.total_fee_pct)는 총보수(TER) 보완용.
+      총보수 근사는 derivation_rules.totalFeeApprox (4종 합÷10, 기타비용 미포함 명시).
+      0 은 zero_as_missing.보수_3종전부0 규칙으로 배제하되, 개별 항목 0(예: 사무관리보수 0 — 판매중 1,157행)은 "해당 보수 없음" 으로 읽는다.
+    applies_to:
+    - or_co_rwrd_r
+    - sale_co_rwrd_r
+    - trusc_rwrd_r
+    - ofwk_trus_rwrd_r
+  sale_co_rwrd_r:
+    korean_name: 판매회사보수
+    missing_reason: none
+    unit: ‰ (값÷10 = %, or_co_rwrd_r 참조)
+    note: 0값 2,271(판매중 756). fd_prsv_r 과 23,240/23,676(98.2%) 동일값 — 아래 fd_prsv_r 참조.
+  trusc_rwrd_r:
+    korean_name: 신탁업자보수 (수탁보수)
+    missing_reason: none
+    unit: ‰ (값÷10 = %, or_co_rwrd_r 참조)
+    note: 0값 967(판매중 235). distinct 96.
+  ofwk_trus_rwrd_r:
+    korean_name: 일반사무관리보수
+    missing_reason: none
+    unit: ‰ (값÷10 = %, or_co_rwrd_r 참조)
+    zero_is_value: true
+    note: >-
+      0값 4,866(판매중 1,157) — 사무관리회사를 두지 않는 펀드는 0 이 정상값. 배제하지 말 것.
+      🔴 2026-08-26 주최 답변("0 인 행 제외") 검토 결과 **예외 유지**. 이 컬럼은 단독 랭킹 축이 아니라
+      totalFeeApprox = (or_co + sale_co + trusc + ofwk)/10 의 **합산 성분**이다. 0 을 제외하면 사무관리회사가 없는
+      펀드 4,866건이 총보수 질의에서 통째로 사라진다. 0 제외는 성분이 아니라 **합산된 총보수 값**에 적용한다.
+  fd_prsv_r:
+    korean_name: 보전율
+    missing_reason: unresolved
+    evidence_grade: C
+    trap: >-
+      🔴 컬럼명(보전율)과 값이 맞지 않는다 — 98.2% 가 sale_co_rwrd_r(판매회사보수) 과 동일값이고 분포(0.1·5.0·10.0·0.3…)도 보수 형태.
+      원금보전율이라면 0~100 이어야 하는데 max 25 다. 판매보수와 98.16% 동일(검수 C 2026-08-25 재실측) — 복제 컬럼. 의미 확정 불가 → 답변 배제 확정.
+    answer_policy: "'보전율' 질의 → 이 컬럼으로 답하지 말 것. 원금보존추구 여부는 prfd_attr_cds 태그('원금보존추구')로 답한다."
+
+  # ── 클래스 체계 (🆕 2차 신규 — 스키마 코멘트 "클래스 한글 표기". 출처 기관은 미표기 → 특정 기관명으로 서술 금지, 검수 C 2026-08-25) ──
+  han_clas_nm:
+    korean_name: 클래스 한글 표기
+    missing_reason: missing
+    evidence_grade: B
+    answerable_n: 9637
+    note: >-
+      195종. 형식 '<수수료유형>-<채널>-<정책…>' (예: 수수료미징구-온라인-퇴직연금). 아래 3컬럼으로 분해돼 있다.
+      🔴 2026-09-04 보강(AA24 실측) — 이 컬럼에는 **'종류A'·'C-P2E' 같은 클래스 문자 표기가 없다.**
+      사용자가 말하는 클래스 표기는 종목명 끝에 붙어 있다(itm_nm 에 '종류A' 539행 · 기본모수).
+      `han_clas_nm = '종류 A'` 로 필터하면 **반드시 0행**이다 — query_rules.종목명검색 의 클래스 표기 절을 쓴다.
+      결측 14,039(판매중 2,228 — 그중 사모 1,979 · 공모 249). 공모·판매중 기준 결측 2.8%.
+    answer_policy: >-
+      "온라인 클래스" "퇴직연금 전용" "선취 수수료 없는 클래스" 질의는 분해 컬럼(han_clas_fee_type / han_clas_sales_channel /
+      han_clas_policies)으로 필터. 결측 시 itm_nm 의 클래스 접미(C-e, C-P 등)로 보조 추정하되 근거를 밝힐 것.
+  han_clas_fee_type:
+    korean_name: 클래스 수수료 부과 유형
+    missing_reason: missing
+    value_semantics:
+      수수료미징구: 선취·후취 판매수수료 없음 (7,834)
+      수수료선취: 가입 시 선취 (1,786)
+      수수료후취: 환매 시 후취 (5)
+  han_clas_sales_channel:
+    korean_name: 클래스 판매채널
+    missing_reason: missing
+    value_semantics:
+      오프라인: 6,048
+      온라인: 3,548
+      직판: 7
+  han_clas_policies:
+    korean_name: 클래스 부가 정책
+    missing_reason: mixed
+    note: >-
+      쉼표 다중값 33종 — 퇴직연금 2,012 · 개인연금 1,610 · 보수체감 1,572 · 기관 330 · 랩 216 · 고액 138 · '랩,펀드' 83 …
+      결측 17,408 은 "부가 정책 없음" 과 "클래스 정보 자체 결측(han_clas_nm NULL)" 이 섞여 있다 —
+      han_clas_nm IS NOT NULL AND han_clas_policies IS NULL 만 '정책 없음' 으로 읽을 것.
+    answer_policy: 연금 질의(퇴직연금/개인연금 가입 가능 클래스)는 LIKE '%퇴직연금%' 등 부분일치로 필터.
+
+  # ── 제로인 유형·속성 (🆕 2차 신규) ───────────────────────────────────
+  zrin_btyp_nm:
+    korean_name: 제로인대유형명
+    kg_entity: AssetClass                # 2026-08-25 포인터 기입 — coverage report 추적용 (shared/asset_class.yaml)
+    missing_reason: missing
+    evidence_grade: A
+    answerable_n: 11281
+    value_semantics_요약: >-
+      18종 — 해외주식형 3,372 · 주식형 2,149 · 해외기타 881 · 채권형 798 · 해외채권형 700 · 채권혼합형 662 ·
+      해외채권혼합형 608 · 해외주식혼합형 479 · 기타 439 · 절대수익추구형 375 · 주식혼합형 234 · MMF 218 ·
+      해외특별자산 108 · 해외부동산형 98 · 커머더티형 90 · 외화 MMF 30 · 부동산형 24 · 특별자산 16.
+    note: 결측 12,395(판매중 2,411 — 사모 다수). zrin_btyp_cd(10~69) 와 1:1. 국내/해외 구분이 유형에 내장돼 있다.
+    answer_policy: >-
+      🔵 "주식형 펀드" 류 자산군 질의의 **1순위 축**. or_attr_desc(자본시장법 5분류 압축) 보다 투자자산 축에 가깝다.
+      단 '주식형'(국내) 과 '해외주식형' 을 합쳐 물으면 둘 다 포함할 것. 결측분은 derivation_rules.assetClass 폴백.
+  zrin_btyp_cd:
+    korean_name: 제로인대유형코드
+    missing_reason: missing
+    note: zrin_btyp_nm 과 1:1(18종). 코드 대신 명칭을 쓴다.
+  zrin_ptn_nm:
+    korean_name: 제로인유형명 (소분류)
+    missing_reason: missing
+    evidence_grade: A
+    note: >-
+      102종(판매중 85) — 일반주식 1,188 · 글로벌라이프싸이클 751 · 글로벌주식 587 · 중국주식 574 · 일반채권혼합 531 ·
+      일반채권 389 · 북미주식 330 … zrin_pcd 104종과 거의 1:1(명칭 2종이 코드 2개씩).
+      ⚠️ '영구미분류' 값 존재 — 유형 질의 모수에서 제외하고 명시.
+    answer_policy: "'중국 주식 펀드' '북미 주식 펀드' 등 지역×자산 질의의 1순위 축. 결측 시 prfd_attr_cds 의 ISO 태그·W축 태그로 폴백."
+  zrin_pcd:
+    korean_name: 제로인유형코드
+    missing_reason: missing
+    note: zrin_ptn_nm 참조. 코드 대신 명칭.
+  prfd_attr_cds:
+    korean_name: 펀드별속성코드 목록(쉼표 구분)
+    missing_reason: missing
+    evidence_grade: B
+    answerable_n: 11280
+    구조: >-
+      1차 prfd_attr_cd(행당 1태그) 를 행당 쉼표 목록으로 집약한 것. 태그 227종 = ISO 3자 국가 17 + <문자><3자리> 210(축 15개).
+      축별 값 수: C4 D5 E3 F7 G15 M16 N60 O10 P10 Q5 R10 S16 T11 V3 W35 — 1차 entities.FundAttribute.axes 와 동일.
+      prfd_attr_cnt = 목록 길이 (불일치 0행 · 목록 NULL 이면 0).
+    trap: >-
+      🔴 zrin_attr_nms(명칭 목록)와 **위치 대응이 아니다** — 개수 같은 11,253행 중 위치 일치 22행뿐, 개수 불일치 27행.
+      "같은 순서" 로 코드↔명칭 코드북을 뽑으면 틀린다. 행별 (코드집합, 명칭집합) 교집합의 반복 소거로 도출해야 하며,
+      단순 교집합만으로는 20/227 만 유일 확정(C103=개방 · V101=국내 · M109=자펀드 · S117=레버리지 · USA=미국 …).
+      prfd_attr_search_text('코드 명칭 코드 명칭…' 형식) 이 코드-명칭 쌍을 **인접 표기**하므로 이 컬럼이 코드북 도출의 정답지다 — ✅ `scripts/gen_fund_attr_codebook.py` → `ontology/codebooks/fund_attr_code.csv`(속성코드 210종, 축 = 첫 글자) + `fund_country_tag.csv`(ISO3 국가 태그) 생성 완료 (2026-08-25). 명칭은 zrin_attr_nms 등장 여부로 행 단위 검증.
+    answer_policy: >-
+      태그 필터는 ',' 경계 포함 LIKE ('%,'||tag||',%' 로 양끝 ',' 보강) 또는 zrin_attr_nms 의 명칭 LIKE 로.
+      🔴 코드 자체를 답변에 노출하지 말 것 — zrin_attr_nms 의 명칭으로 말한다.
+  prfd_attr_cnt:
+    korean_name: 펀드별속성 개수
+    missing_reason: none
+    zero_is_value: true
+    note: 0 = 태그 목록 없음(12,396행). 수치가 아니라 목록 길이다 — 집계 축으로 쓰지 말 것.
+  prfd_attr_search_text:
+    korean_name: 상품검색용 속성 코드/명칭
+    missing_reason: missing
+    note: "'D102 국내위탁판매 V101 국내 C101 추가 C103 개방' 형식 — 코드와 명칭이 쌍으로 인접. 키워드 검색(LIKE) 용도 + 코드북 도출 원천."
+  zrin_attr_nms:
+    korean_name: 제로인속성명 목록(쉼표 구분)
+    missing_reason: missing
+    note: prfd_attr_cds 의 명칭판(순서 불일치 — prfd_attr_cds.trap). 사용자 어휘('개방형' '단위형' '레버리지' '자펀드' 'ESG' 'TDF2045' 등)로 바로 필터 가능.
+    answer_policy: 개방/폐쇄·추가/단위·모자형(자펀드)·연금·ESG 같은 구조/정책 질의의 1순위 축. 결측(12,396) 시 itm_nm 파싱 폴백.
+
+  # ── 자산구성비 (🆕 2차 신규 · 제로인) ──────────────────────────────
+  zrin_dmst_stk_cmst_rt:
+    korean_name: 제로인국내주식구성비율
+    missing_reason: missing
+    evidence_grade: A
+    unit: percent
+    zero_is_value: true
+    note: >-
+      7개 비율(국내주식·국내채권·해외주식·해외채권·펀드·유동성·기타) 합 = 100 이 **9,413/9,413 전건** 성립(±1).
+      결측 14,263(판매중 2,621)은 7개가 동시에 NULL. 0 은 "해당 자산 미보유" 실제값 — 🔴 zero_as_missing 적용 금지.
+    answer_policy: >-
+      "국내주식 비중 50% 이상 펀드" 류 질의 직답 가능. 재간접(zrin_fd_cmst_rt 높음)은 편입 펀드의 내부 자산이 보이지 않음을 명시.
+      기준일은 fd_daily_bas_dt 로 병기.
+    applies_to:
+    - zrin_dmst_stk_cmst_rt
+    - zrin_dmst_bd_cmst_rt
+    - zrin_ovrs_stk_cmst_rt
+    - zrin_ovrs_bd_cmst_rt
+    - zrin_fd_cmst_rt
+    - zrin_liqt_cmst_rt
+    - zrin_etc_ast_cmst_rt
+  zrin_dmst_bd_cmst_rt: {korean_name: 제로인국내채권구성비율, missing_reason: missing, unit: percent, zero_is_value: true}
+  zrin_ovrs_stk_cmst_rt: {korean_name: 제로인해외주식구성비율, missing_reason: missing, unit: percent, zero_is_value: true}
+  zrin_ovrs_bd_cmst_rt: {korean_name: 제로인해외채권구성비율, missing_reason: missing, unit: percent, zero_is_value: true, note: distinct 15 — 거의 0 아니면 97~100. 해외채권형 단독 판별 축.}
+  zrin_fd_cmst_rt: {korean_name: 제로인펀드구성비율, missing_reason: missing, unit: percent, zero_is_value: true, note: 재간접 판별 보조 — derivation_rules.isFundOfFunds 와 교차.}
+  zrin_liqt_cmst_rt: {korean_name: 제로인유동성구성비율, missing_reason: missing, unit: percent, zero_is_value: true}
+  zrin_etc_ast_cmst_rt: {korean_name: 제로인기타자산구성비율, missing_reason: missing, unit: percent, zero_is_value: true}
+
+  # ── 가격·분배·기준일 (🆕 2차 신규) ───────────────────────────────────
+  bns_bpr:
+    korean_name: 매매기준가
+    missing_reason: missing
+    unit: krw_per_1000units   # ✅ 검수 C 2026-08-25 — 최빈 구간 1,000~1,400(설정 시 1,000 기준, KRW 펀드) · 외화 펀드는 curr_cd 통화(min 0.5 = 외화). 스키마 "매매기준가"
+    note: 결측 14,263(판매중 2,621). 0값 0. 범위 0.5~142,596 — 외화기준가펀드(USD 453·EUR 56 …)가 섞여 있어 통화 병기 필수.
+    answer_policy: 기준가 질의는 fd_price_bas_dt 를 병기. 통화는 curr_cd. 상품 간 기준가 크기 비교는 무의미(설정 시 1,000 기준) — 비교 질의 기각.
+  fd_sbpr:
+    korean_name: 시가평가금액
+    missing_reason: unresolved
+    evidence_grade: C
+    trap: >-
+      🔴 컬럼명과 값이 맞지 않는다 — 0 이 16,576(70%) 이고 나머지는 700·800·812… 같은 3~4자리 정수(max 7,075; 2자리 8행 예외 — 12·30·32·61·67·70·88·91).
+      '시가평가금액' 이라면 억 단위 금액이어야 한다. 의미 미확정(기준가 하한? 코드?) — 답변에 사용 금지.
+    answer_policy: 이 컬럼으로 어떤 질의도 답하지 말 것.
+  fd_last_dstb_r:
+    korean_name: 최근 분배율
+    missing_reason: mixed
+    unit: unknown   # 🔴 검수 C 2026-08-25 — 98.4% 가 ≤100 이나 max 157,413 · MMF 가 2.5~3.6(기준가 1,004) — % 인지 좌당 금액인지 확정 불가 → 수치 인용 금지
+    # zero_is_value 해제 (2026-08-26 주최 답변 — 0 인 행은 결과에서 제외)
+    trap: >-
+      -100 이 73행(전부 판매완료) — 센티넬. 판매중에서는 0건. 0값 4,840(판매중 4,265)은 "분배 없음" 관측 사실이나
+      🔴 2026-08-26 주최 답변에 따라 분배율 질의 결과에서는 제외한다.
+      🔴 2026-08-26 결함 수정 — 이 컬럼에 answer_policy 키가 두 번 있어 yaml 파서가 뒤엣것만 남기고
+      검수 C 의 "수치 인용 금지" 지침을 덮어쓰고 있었다(플래너에 순위 산출을 지시하는 상태였음). 아래로 병합.
+    answer_policy: >-
+      분배 유무(>0 / =0)만 답한다. 🔴 분배율 **수치·순위는 답변 배제** — 검수 C 2026-08-25 에서 단위 미확정
+      (98.4% 가 ≤100 이나 max 157,413 · MMF 가 2.5~3.6). '분배 실적 있음/없음' + 회계기간(fd_last_dstb_actg_eot_dt) 병기로만 응답.
+      유무 판정 시에도 판매중 한정 + > -100(센티넬 제외). 분배 시점이 2004~2026 으로 흩어져 있어 "최근" 이 상품마다 다르다.
+  fd_last_dstb_actg_bss_dt:
+    korean_name: 최근 분배 회계기초일자
+    missing_reason: missing
+    unit: yyyymmdd(REAL 저장)
+    applies_to: [fd_last_dstb_actg_bss_dt, fd_last_dstb_actg_eot_dt]
+  fd_last_dstb_actg_eot_dt:
+    korean_name: 최근 분배 회계기말일자
+    missing_reason: missing
+    note: 2004-01-06 ~ 2026-08-20.
+  fd_daily_bas_dt:
+    korean_name: 펀드데일리정보 기준일자
+    missing_reason: missing
+    unit: yyyymmdd(REAL 저장)
+    note: >-
+      9,413행 보유 중 20260821 이 7,429. 나머지는 2018-10-11 까지 거슬러 올라가는 **구식 스냅샷**(판매중 1,025·판매완료 959 — 2026-09-02 재계수, 판매중이 더 많다).
+      순자산·기준가·자산구성비·수익률의 기준일이 이 컬럼이다 (fd_price_bas_dt 와 9,413/9,413 동일).
+    answer_policy: 수치 답변에 이 날짜를 병기. 기준일이 2026-08-21 이 아닌 행은 "N년 M월 기준" 으로 오래됨을 명시.
+  fd_price_bas_dt:
+    korean_name: 펀드 기준가/수익률 기준일자
+    missing_reason: missing
+    note: fd_daily_bas_dt 와 전건 동일. 한쪽만 쓴다.
+
+  # ── 평가 데이터 (위험등급·수익률·순자산·벤치마크) ─────────────────────
+  zrin_fd_ivst_risk_gcd:
+    korean_name: 제로인펀드투자위험등급코드
+    kg_entity: RiskGrade                # 2026-08-25 포인터 기입 — coverage report 추적용 (shared/riskgrade.yaml)
+    missing_reason: missing
+    answerable_n: 8547          # 판매중 10,962 중 결측 2,415 (22.0%) · 전체 8,689
+    unit: grade
+    layer:
+      scale: '1~6 (REAL 1.0~6.0 저장 — CAST(… AS INTEGER) 비교)'
+      direction: 🔴 낮을수록 위험 (1=매우높은위험, 6=매우낮은위험) — 직관과 반대
+      note: >-
+        운용사가 산정·공시하는 투자위험등급(제로인은 게시 경유) — "제로인이 산출" 서술 금지
+        (data/external/lookups/zeroin_methodology.md). ETF·채권의 등급과 산출 주체·기준이 다르므로 교차 질의 시 근거를 밝힐 것.
+        🔴 2차에서 공통 종목의 29% 에서 등급 값이 바뀌었다(예: 2→1) — 1차 기준 문서의 등급 수치 인용 금지.
+    결측의_축: >-
+      2026-08-25 실측 — 판매완료 12,572/12,714(98.9%) · 판매중 2,415/10,962(22.0%) · 판매중·공모 422/8,969(4.7%).
+      판매중 결측 2,415 중 2,413 이 1년수익률도 결측, 2,393 이 순자산도 결측 → 평가 데이터 소스가 통째로 없는 행(1차 '전무' 그룹과 같은 성격).
+      🔴 1차의 "판매중 결측 27종목 · 150억 이상 0건" 서술은 2차에서 **무효** — 모수가 바뀌었고(사모 유입) 재산출 전이다.
+    answer_policy: >-
+      비교 전 CAST(… AS INTEGER). 숫자가 작을수록 위험이 크다는 방향을 답변에 밝힐 것.
+      결측 시 '평가 데이터가 제공되지 않았습니다'. '소규모라서' '신규라서' 사유 서술 금지(1차 판정 유지 — 충분조건 아님).
+      모수는 판매중·공모 8,969 중 8,547 등 필터 조건과 함께 밝힌다.
+    note: 값 6종(1.0~6.0) 정상. 1차의 오염값 '20054.0' 은 2차에 없다.
+  zrin_fd_ivst_risk_grd_nm:
+    korean_name: 제로인펀드투자위험등급명
+    kg_entity: RiskGrade                # 2026-08-25 포인터 기입 — coverage report 추적용 (shared/riskgrade.yaml)
+    missing_reason: missing
+    evidence_grade: A
+    answer_policy: 공백 변형('높은위험' 20행 · '보통위험' 8행) 때문에 등급명 조회 시 누락 — normalization.value_variants. 코드로 필터하는 편이 안전.
+    note: 명칭 8종 = 정상 6 + 공백 변형 2. 1차의 오염값 '06' 은 2차에 없다.
+  fd_yr1_ern_r:
+    korean_name: 펀드 1년수익률
+    missing_reason: mixed
+    answerable_n: 6913          # 판매중 10,962 중 결측 4,049 (36.9%) · 전체 7,022
+    answerable_n_by_column:     # 🔴 applies_to 상속 컬럼은 모수가 다르다 — 검토표 A-1-18~24 가 6,913 복사를 기재 오류로 잡음 (2026-08-30 실측, 판매중·공모)
+      fd_mm1_ern_r: 7273
+      fd_mm3_ern_r: 7194
+      fd_mm6_ern_r: 7107
+      fd_mm18_ern_r: 6780
+      fd_yr1_ern_r: 6913
+      fd_yr2_ern_r: 6649
+      fd_yr3_ern_r: 6384
+      fd_yr5_ern_r: 5876
+      _note: >-
+        기간이 길수록 모수가 준다(1개월 7,273 → 5년 5,876). 8컬럼 전부 -100 센티넬 0건. NULL 의미는 동일(상속 유효).
+        🔴 정정(08-31 실측): 0값은 단기에 실재 — 1개월 21 · 3개월 12 · 6개월 5 · 2년 1행(전부 기본모수 안, 비MMF,
+        인접 기간엔 값 있음 — 실제 0 인지 미산출인지 판별 불가, 수치기본배제 <>0 이 배제하므로 답변 영향 없음. 검토표 B-2-02).
+        답변의 모수 병기는 질의 기간 컬럼의 값을 쓴다.
+    unit: percent_cumulative
+    answer_policy: >-
+      수익률은 **누적**임을 명시('3년 수익률 10.5%' ≠ 연 10.5%). Top-N 은 판매중(+공모) 한정, 정렬 컬럼에
+      'IS NOT NULL AND > -100' (query_rules.수익률정상), 모수와 기준일(fd_daily_bas_dt) 병기.
+      🔴 2차엔 -100 미만 오류값이 **0건**이다 (1차 KCGI베트남 -4,381% 소멸). 규칙은 방어용으로 유지.
+      결측 시 패턴을 보고 응답을 가를 것 — 접미결측(짧은 기간만 있음)은 '운용 이력이 짧아 미산출', 전무는 '평가 데이터 미제공'.
+    note: >-
+      2026-08-25 — 판매중에서 8기간(1주 제외) 전부 NULL 3,675행 · 전부 0 인 행 0 · 1년수익률 0 인 행 0.
+      → 1차의 zero_as_missing.수익률_9기간전부0(69종목) 규칙은 **삭제**. 0 은 값이다(단기 무변동).
+      🔴 fd_wk1_ern_r 은 2차에서 100% 결측 — 9기간이 아니라 8기간이다.
+      1차의 missing_patterns(접미결측 17.9% · 전무 31.7% · 구멍 1.1% · 형제 클래스 대조 32.7%)는 2차로 재산출하지 못했다(1차 실측) —
+      판정의 방향(접미=이력 짧음 · 전무=평가 미제공 · 구멍=오류 후보, 인접 기간 대체 추정 금지)은 유지한다.
+    applies_to:
+    - fd_mm1_ern_r
+    - fd_mm3_ern_r
+    - fd_mm6_ern_r
+    - fd_yr1_ern_r
+    - fd_mm18_ern_r
+    - fd_yr2_ern_r
+    - fd_yr3_ern_r
+    - fd_yr5_ern_r
+  fd_wk1_ern_r:
+    korean_name: 펀드 1주수익률
+    missing_reason: missing
+    evidence_grade: A
+    answerable_n: 0
+    answer_policy: "🔴 2차에서 100% 결측(23,676/23,676). '1주 수익률' 질의 → '데이터 미제공'. 필터·정렬에 절대 쓰지 말 것 — 전 행 탈락."
+  fd_yr3_ern_r:
+    korean_name: 펀드 3년수익률
+    missing_reason: mixed        # 2026-08-30 — 명시 항목이 fd_yr1_ern_r 의 applies_to 상속을 막아 판정이 비어 있었다(검토표 C-2-03). 판정은 fd_yr1 과 동일
+    answerable_n: 6384           # 판매중·공모 non-null · 센티넬 0건 · 전체 6,490
+    evidence_grade: A
+    unit: percent_cumulative
+    answer_policy: 수익률 Top-N(최저) 질의 시 정렬 컬럼에 `> -100` (방어용 — 2차 오류값 0건).
+  fd_nast_suma:
+    korean_name: 펀드 순자산
+    missing_reason: missing
+    unit: krw
+    answerable_n: 8340          # 판매중 10,962 중 결측 2,621 (23.9%) · 0값 0   # 2026-08-30 재실측 8,340 (기재 8,341 은 1행 과다 — 검토표 A-1-21)
+    evidence_grade: B
+    answer_policy: >-
+      순자산 Top-N 은 sale_yn='판매중' (+공모) 한정, 모수·기준일(fd_daily_bas_dt) 병기.
+      🔴 펀드 단위 집계는 **MAX** — 이 값은 펀드 순자산이 클래스마다 반복 기록된 것이다
+      (2차 실측: std_itm_no 안에서 값이 갈리는 경우 0건. 펀드 키(or_co, mtco) 단위 재검증은 미실시 — 1차 75.6% 동일).
+      SUM 은 과대계상(1차 3.31배) — 금지.
+    note: >-
+      2026-08-25 — 판매중 0값 **0건** → 1차 zero_as_missing.fd_nast_suma(294종목) 규칙 **삭제**.
+      결측은 판매완료 11,642/12,714 · 판매중 2,621/10,962 · 판매중·공모 629/8,969(7.0%).
+  bmrk_nm:
+    korean_name: 벤치마크명
+    kg_entity: Index                # 2026-08-25 포인터 기입 — coverage report 추적용 (shared/index.yaml)
+    missing_reason: missing
+    note: >-
+      결측 12,395(판매중 2,411 · 판매중·공모 418). 판매중 distinct 255. 복합식('KOSPI200 25% + 종합채권01Y 75%')이 다수 — 파싱 전제.
+      🔴 2026-08-30 — 결측의 정체: 판매중·공모 418행은 zrin_btyp_nm NULL 418행과 **동일 집합**이고 418행 전부 수익률·순자산도 NULL
+      (401행은 zrin_* 14컬럼 전부 NULL). 사모 판매중 1,993 전건 NULL. → "벤치마크가 없는 펀드" 가 아니라 **평가사(제로인) 데이터 블록 미수록** 이다.
+      복합식 253종/5,402행(판매중 4,188) — '+' 로 갈라 '<n>%' 를 떼면 성분 329종. KOSPI200 은 정확일치 1,522행 외에 복합식 안에 1,367행(판매중 951),
+      MSCI ACWI 는 412행 외에 복합식 1,990행 → 정확일치·KG 노드 일치로 찾으면 각각 47%·83% 를 놓친다(E-3-12).
+    answer_policy: >-
+      '같은 지수를 추종하는 펀드' 질의는 정확일치가 아니라 지수명 부분일치(query_rules.벤치마크검색)로 — 복합식 안의 성분까지 잡힌다.
+      결측 문구는 "평가사 벤치마크 정보가 수록되어 있지 않습니다"(데이터 미제공) — "벤치마크가 없습니다" 로 단정하지 말 것.
+      국내ETF ref_base_index 와의 교차는 표기 체계가 달라 별도 매핑 필요(정규화키 교집합 3종 + 수동 index.yaml 19노드뿐).
+  bmrk_eng_nm:
+    korean_name: 벤치마크영문명
+    missing_reason: missing
+    evidence_grade: A
+    note: >-
+      결측 12,395 = bmrk_nm 과 같은 행(한쪽만 빈 행 0). bmrk_nm 389종 ↔ 386종 — 영문명이 한글 표기 변형 3쌍을 합친다
+      ('MSCI CHINA'/'MSCI CHINA(USD)' · '동남아6개국 합성지수' 2변형 · '채권종합지수 1~2년'/'종합채권 1~2년'). 표기 정규화 키로 쓸 수 있다.
+    answer_policy: bmrk_nm 과 쌍으로 제시. 결측 문구·검색은 bmrk_nm 규칙을 따른다. 영문 지수명 질의는 bmrk_nm 에도 영문 표기가 대부분이라 bmrk_nm OR bmrk_eng_nm 부분일치로.
+  exchdg_yn:
+    korean_name: 환헤지여부
+    missing_reason: not_applicable
+    answer_policy: 국내 펀드의 환헤지 문의 → '해당사항 없음'. 해외/혼합 펀드의 결측만 '확인할 수 없음'.
+    note: >-
+      2026-08-25 판매중 — 국내 NULL 4,460/4,767(93.6%) · 해외 NULL 639/4,944(12.9%) · 국내외혼합 NULL 309/1,135.
+      해외 Y 2,998 · N 1,307. 값 Y/N/NULL 3종(1차 오염값 '00080008' 소멸).
+  or_attr_desc:
+    korean_name: 운용속성코드 설명
+    missing_reason: none
+    note: >-
+      14종 — 주식형 5,231 · 채권형 4,472 · 재간접 3,652 · 채권혼합 2,989 · 파생상품 2,302 · 혼합자산 1,272 · 해당없음 905 ·
+      주식혼합 877 · 특별자산 785 · MMF 601 · 임대형 226 · 기타 170 · 대출형 106 · 개발형 88.
+      🔴 1차의 코드 '06' 이 2차에서 **'파생상품' 명칭으로 직접 수록** — '06' 매핑 서술은 전부 제거했다.
+      '해당없음' 905 는 ✅ 전부 공모·판매완료(검수 C 2026-08-25 실측 — 사모 0) = 공모 레거시. 판매중 모수에서는 0건이라 답변 영향 없음. 자산군·운용구조·파생활용 3축이 압축된 컬럼이라는 판정은 유지(derivation_rules).
+  int_dvd_desc:
+    korean_name: 이자배당구분코드 설명
+    missing_reason: none
+    note: >-
+      배당 20,520 · 이자 2,809 · 해당없음 347. '이자' 2,809 = 공모 1,705 + 사모 1,104 (✅ 검수 C 2026-08-25 — 사모 유입만의
+      효과가 아님, 공모가 더 많음). 1차(이자 2종목)와의 차이는 2차 판매완료·레거시 수록 효과.
+      🔴 2026-09-04 정정(DOM-10 실측) — 구 문장 "필터 축으로 쓰려면 공모·판매중 한정" 은 **반대 방향이었다.**
+      기본모수(판매중·공모 8,969)로 한정하면 **전건 '배당' = 상수 컬럼**이라 이자/배당 구분이 성립하지 않는다.
+      '이자' 2,809 는 전부 판매완료·사모 쪽이다. 이 축의 질의는 gate_constants "(이자/배당 구분)" 이 즉답한다.
+      🔴 auto.yaml 의 distinct_count=2 는 **전체 95,619행 기준**이라 이 상수성을 못 잡는다 — 상수 판정은 기본모수에서 한다
+      (규칙 북 09_forbid 체크리스트 #3 의 답).
+  hdge_fd_yn:
+    korean_name: 헤지펀드여부
+    missing_reason: none
+    note: 1 = 210행 — ✅ 전부 사모(검수 C 2026-08-25). 1차의 상수(전부 0) 판정 해제. 공모 필터 후 0.
+  ofsfd_yn:
+    korean_name: 역외펀드여부
+    missing_reason: none
+    note: 1 = 116행. 1차의 상수 판정 해제.
+  frc_bpr_itm_yn:
+    korean_name: 외화기준가종목여부
+    missing_reason: none
+    note: 1 = 413행 — curr_cd 가 KRW 가 아닌 529행과 근접하나 동일하진 않음(미대조). 기준가 통화 판단은 curr_cd 우선.
+  curr_cd:
+    korean_name: 통화코드
+    kg_entity: Currency                # 2026-08-25 포인터 기입 — coverage report 추적용 (shared/currency.yaml)
+    missing_reason: none
+    note: KRW 23,147 · USD 453 · EUR 56 · JPY 15 · AUD 2 · GBP 2 · SEK 1. 순자산·기준가 정렬 시 KRW 외 529행은 환산 없이 섞지 말 것.
+  fd_set_pcd:
+    korean_name: 펀드설정P코드
+    missing_reason: none
+    note: "'10' 17,684 · '20' 4,025 · '00' 1,967. axis_issuanceType 참조 — '00' 1,967 = 판매완료 1,851·태그 없음 1,857(검수 C 2026-08-25) → 설정유형 미기재 레거시. 답변: '00' 이면 추가/단위형 '확인 불가'(배제)."
+  fd_estb_ctry_cd:
+    korean_name: 펀드설정국가코드
+    missing_reason: none
+    note: "'000' 23,055 · 410(한국) 505 · 442(룩셈부르크) 96 · 840(미국) 11 · 136·826·372 소수. 🔴 검수 C 2026-08-25 — '000' 은 국내 14,737·해외 6,687·국내외혼합 1,631 에 걸쳐 있어 '국내 설정' 이 아니라 **코드 미기재 기본값**. 결측으로 정규화하지 말되(주최 공지) 설립국가 질의는 코드 있는 행(410·442·840…)만 답하고 '000' 은 '설립국가 코드 미기재'."
+    answer_policy: "'룩셈부르크 설정 펀드' 류 질의만 답변 가능(코드 442 등). '국내 설정' 판정에 '000' 을 쓰지 말 것 — ovrs_fd_desc(국내/해외) 로 답한다."
+
+  # ── 2026-08-25 kg_entity 포인터용 stub (재작성 때 누락된 축 컬럼) ──
+  or_co_xtn_itt_cd:
+    korean_name: 운용사 대외기관코드
+    kg_entity: Organization                # 2026-08-25 포인터 기입 (stub — 판정 본문은 auto.yaml·shared alias 참조)
+    missing_reason: mixed                   # 2026-08-30 E-3-14: none 오선언 → mixed. '99999999' 27행이 운용사가 아닌 미지정 센티넬(DB 재현 확인)
+    missing_semantics:
+      "99999999": "운용사 미지정 27행(전부 판매완료) — codebooks/asset_manager.csv 는 이 코드를 '현대와이즈03사'(종목명 접두 최빈값 · 점유 15% · source 가 '법인명 아님' 이라 자인)로 등재해 KG 에 Org_fund_99999999 노드를 만들고 있다. 🔴 실재하지 않는 운용사다 — 운용사명으로 답하지 말 것. 답변은 '운용사 정보가 수록돼 있지 않습니다'"
+    note: "275종 0패딩 코드 — codebooks/asset_manager.csv (법인명 90 · derived 나머지). 이름 컬럼 없음 · 2026-08-30 추가: 파생 라벨 157/275(점유<50% 가 36건)는 근거가 약하다 — 운용사명 단정 대신 '추정' 병기. 센티넬 '99999999' 27행은 결측(코드북 행 제외 + KG 재생성 필요 — PLAN P1-4)"
+  trusc_xtn_itt_cd:
+    korean_name: 수탁사 대외기관코드
+    kg_entity: Organization                # 2026-08-25 포인터 기입 (stub — 판정 본문은 auto.yaml·shared alias 참조)
+    missing_reason: mixed                   # 2026-08-29 A-1-26: none 오선언 → mixed. 2026-08-30 보정: NULL 42 만이 아니라 센티넬 672 를 더해 714행(3.0%)
+    missing_semantics:
+      "null": "수탁사 코드 미기재 42행 — 미지정·누락 혼재로 원인 미확정. 답변은 '수탁사 정보가 수록돼 있지 않습니다' (다른 값으로 채우지 말 것). 물리 NULL 42 · distinct 50 은 2026-08-29 DB 재현 확인"
+      "99999999": "미지정 센티넬 598행 — codebooks/trustee.csv 미등재. 정상 코드는 '00020081'·'00020004' 같은 8자리 체계다. 답변은 null 과 동일하게 '수탁사 정보가 수록돼 있지 않습니다' (2026-08-30 DB 재현)"
+      "00000000": "미지정 센티넬 74행 — 위와 동일. 두 센티넬 합 672행 중 판매중·공모가 72행이라 답변 노출 구간이다 (2026-08-30 DB 재현)"
+    note: "50종 — codebooks/trustee.csv 17종만 법인명 확정 · 물리 NULL 42(더미 규칙 대상 아님 — 고정 코드) · 2026-08-30 추가: 이 컬럼은 dummy_as_missing 화이트리스트 밖이라 규칙이 걸리지 않는다. 결측 = NULL 42 + '99999999' 598 + '00000000' 74 = 714행(3.0% · 판매중·공모 72). KG 의 Org_trustee_99999999 · Org_trustee_00000000 두 노드는 코드 숫자를 label_ko 로 달고 있어 제거 대상(KG 재생성 — PLAN P1-4)"
+  fd_ivst_rgn_desc:
+    korean_name: 투자지역 설명
+    kg_entity: Region                # 2026-08-25 포인터 기입 (stub — 판정 본문은 auto.yaml·shared alias 참조)
+    missing_reason: none
+    note: "9종 — 7/9 매핑"
+
+missing_profile:
+  _note: >-
+    2026-08-25 2차 실측. 행 = 종목이므로 행 기준 = 종목 기준. 🔴 판매완료 12,714행은 위험등급·수익률이 98~99%(순자산 91.6%·제로인 유형 78.5%) 결측이라
+    **판매중 10,962 기준** 결측률을 함께 적는다. 상세 컬럼별 수치는 public_funds.auto.yaml.
+  모수_전체: 23676
+  모수_판매중: 10962
+  모수_판매중_공모: 8969
+  결측없음_컬럼: >-
+    itm_no itm_nm itm_abrv_nm itm_eng_nm or_co_xtn_itt_cd or_attr_desc fd_set_pcd ovrs_fd_desc fd_ivst_rgn_desc fd_estb_ctry_cd
+    curr_cd prvo_pbff_desc prvo_fd_desc pers_corp_desc pfiv_sale_cntl_tcd sale_yn int_dvd_desc frc_bpr_itm_yn hdge_fd_yn ofsfd_yn
+    or_co_rwrd_r sale_co_rwrd_r trusc_rwrd_r ofwk_trus_rwrd_r fd_prsv_r fd_sbpr prfd_attr_cnt
+  결측있는_컬럼_판매중기준:
+    # 컬럼: [판매중 실질결측, 판매중 결측률%, 전체 결측률%, missing_reason]
+    fd_wk1_ern_r:            [10962, 100.0, 100.0, missing]
+    itm_eabrv_nm:            [null, null, 99.4, missing]
+    han_clas_policies:       [5205, 47.5, 73.5, mixed]
+    fd_yr5_ern_r:            [null, null, 74.7, mixed]
+    fd_yr3_ern_r:            [4578, 41.8, 72.6, mixed]
+    fd_yr1_ern_r:            [4049, 36.9, 70.3, mixed]
+    fd_mm1_ern_r:            [3689, 33.7, 68.8, mixed]
+    fd_last_dstb_r:          [2751, 25.1, 54.1, mixed]
+    fd_nast_suma:            [2621, 23.9, 60.2, missing]
+    bns_bpr:                 [2621, 23.9, 60.2, missing]
+    zrin_*_cmst_rt:          [2621, 23.9, 60.2, missing]
+    fd_daily_bas_dt:         [2621, 23.9, 60.2, missing]
+    zrin_fd_ivst_risk_gcd:   [2415, 22.0, 63.3, missing]
+    prfd_attr_cds:           [2412, 22.0, 52.4, missing]
+    zrin_btyp_nm:            [2411, 22.0, 52.4, missing]
+    zrin_ptn_nm:             [2411, 22.0, 52.4, missing]
+    bmrk_nm:                 [2411, 22.0, 52.4, missing]
+    han_clas_nm:             [2228, 20.3, 59.3, missing]
+    fss_itm_no:              [1338, 12.2, 49.2, unresolved]   # 2026-08-29 DB 재현 — 구 1,336 은 규칙 ④(반복문자) 미적용값. 판매중 '111111111111' 2행이 ④에만 걸린다
+    kofia_fd_ccd:            [1158, 10.6, 48.5, unresolved]
+    exchdg_yn:               [5524, 50.4, 70.5, not_applicable]
+    rptt_ksd_itm_no:         [116, 1.1, 29.9, unresolved]
+    mtco_itm_no:             [128, 1.2, 4.5, missing]        # 2026-08-29 DB 재현 — 구 [null, null, 3.7]
+    std_itm_no:              [0, 0.0, 19.7, missing]          # 2026-08-29 DB 재현 — 구 [0, 0.0, 2.8]. 판매중 0 은 유지(실측 0)
+    ksd_itm_no:              [116, 1.1, 10.0, unresolved]     # 2026-08-29 DB 재현 — 구 [null, null, 2.5]. answer_policy 는 이미 10.0% 로 갱신돼 있었다(한 파일 안에서 2.5 vs 10.0 공존)
+  결측의_축: >-
+    🔴 2차에서 결측의 지배 변수는 **판매상태 + 공모/사모** 두 개다.
+      판매완료 → 위험등급·수익률 99% 결측(순자산 92%·제로인 유형 79%) (1차와 동일 방향)
+      판매중 결측 2,4xx 행의 다수가 사모(판매중 사모 1,993) — 공모·판매중으로 좁히면 위험등급 4.7% · 순자산 7.0% · 벤치마크 4.7%
+    → 집계 기본 필터 = sale_yn='판매중' AND prvo_pbff_desc='공모'. 두 축 모두 단방향이며 인과로 서술 금지.
+    식별코드(fss·kofia)는 판매중 공모에서도 비므로 판매상태로 설명 불가(1차 판정 유지).
+
+normalization:
+  trim_columns:
+  - itm_abrv_nm
+  - itm_eng_nm
+  - itm_nm
+  - kofia_fd_ccd
+  - ksd_itm_no
+  - rptt_ksd_itm_no
+  - std_itm_no          # 2차 — '00000       ' 패딩 위장결측 145행
+  - trusc_xtn_itt_cd
+  - mtco_itm_no
+
+  # ── 값처럼 보이지만 결측인 것 ────────────────────────────────────────
+  dummy_as_missing:
+    _note: >-
+      🔴 NULL 만 결측으로 보면 틀린다. 식별 코드의 결측 대부분이 0패딩 더미다.
+      정규화 없이 조인하면 '000000000000' 하나에 1만 행이 뭉치고, LLM 프롬프트에 원값이 닿으면
+      "등록번호는 000000000000입니다" 라고 답한다 — 환각 감점에 직결된다.
+    🔴_화이트리스트_필수: >-
+      patterns 를 columns 목록 **밖**의 컬럼에 적용하지 말 것. 고정 자리수 코드에서 '전부 0' 은 흔한 정상값이다 —
+      fd_estb_ctry_cd '000' 23,055 · pfiv_sale_cntl_tcd '00' 22,263 · fd_set_pcd '00' 1,967 은 값이다.
+      🔴 **다른 도메인에 이 규칙을 복사하지 말 것** (2026-08-30 전 도메인 스캔 실측 — 무엇이 사라지는지):
+        · domestic_bonds.crd_grd 'AAA' **8,722행** — 최고 신용등급이 패턴 ②(^(.)\1+$)에 걸린다. "신용등급 AAA 채권" 질의가 통째로 죽는다.
+        · overseas_etfs 의 실재 티커 TTT(ProShares UltraPro Short 20+ Year Treasury) · YYY(Amplify CEF High Income) ·
+          FFF(Founders 100) · VV(Vanguard Large-Cap) — 전부 실제 상장 ETF 다. 반복문자라고 더미가 아니다.
+        · domestic_bonds.pd_ctry_cd 'KR' 21,881(국가코드) · pd_risk_gcd '11' 1,441(위험등급 11~16 체계) 도 정상값.
+      → 규칙에 걸렸다는 것과 결측이라는 것은 다르다. 더미 후보는 반드시 이름 컬럼(pd_nm·itm_nm)과 함께 조회해 실물을 확인한 뒤 판정한다.
+    patterns:
+    - '^(KR)?0+$'
+    - '^(.)\1+$'
+    columns:
+    - fss_itm_no
+    - kofia_fd_ccd
+    - rptt_ksd_itm_no
+    - mtco_itm_no
+    - ksd_itm_no
+    - std_itm_no
+    실측_2026-08-29: >-
+      🔴 아래는 이 블록의 sql 4갈래를 **그대로 실행**한 값이다(2차 정본 23,676행 · 판매중 10,962). 어림한 정규화로 다시 세지 말 것.
+      fss_itm_no 11,655(49.2%) · kofia_fd_ccd 11,476(48.5%) · rptt_ksd_itm_no 7,086(29.9%) ·
+      std_itm_no 4,668(19.7%) · ksd_itm_no 2,370(10.0%) · mtco_itm_no 1,057(4.5%). 모두 NULL 포함 값이다.
+      (구 실측_2026-08-25 는 1차 모수 — fss 11,611 · kofia 11,431 · rptt 1,761 · mtco 869 · ksd 592 · std 145.
+       rptt·ksd·std 가 각각 5,325 · 1,778 · 4,523 행 어긋나 있었다. 규칙 ④ 반복문자 미적용이 원인으로 추정)
+    sql: >-
+      (C IS NULL OR trim(C)='' OR replace(replace(trim(C),'KR',''),'0','')=''
+       OR (length(trim(C))>1 AND replace(trim(C), substr(trim(C),1,1), '')=''))
+    sql_주의: 🔴 CAST(C AS INTEGER)=0 으로 판정하지 말 것 — '00AG530' 같은 값도 0 으로 읽힌다.
+
+  # ── 리드 결정 2026-08-31 — §9-4 다섯 건 해소 ─────────────────────────
+  code_width:
+    _note: >-
+      규칙 A(§9-3) 도입. 선행 0 유실로 자릿수가 짧아진 기관코드는 **결측이 아니다** —
+      비교·조인·코드북 조회 전에 zfill 한다. 생성기 비대칭 주의: gen_shared_auto 수탁사 경로에는
+      rjust 폴백이 있으나 운용사 경로에는 없다 — KG 재생성 묶음(P1-4)에서 두 경로를 같이 맞춘다.
+    columns: {or_co_xtn_itt_cd: 8, trusc_xtn_itt_cd: 8}
+    실측_2026-08-30: trusc '0016022' 202행(판매중 178 · = '00016022' 미래에셋증권) · or_co '0040106' 2행(판매중 2 · DS증권)
+    sql: printf('%08d', CAST(C AS INTEGER))   # 또는 조회 전 파이썬 str.rjust(8,'0')
+  malformed_as_missing:
+    _note: >-
+      규칙 B(§9-3) 도입. dummy_as_missing 이 못 잡는 축 — 쓰레기값('wtrewrwe'·'sdf')·절단 코드('KRZ' 계열)는
+      값이 있어 보여도 식별 기능이 없다. 결측으로 보고 **노드 생성 금지** — rptt 가짜 Fund 노드 잔여 5개는
+      이 규칙을 반영한 KG 재생성(P1-4 묶음)에서 자동 해소된다(§9-4-3, 별도 처리 없음).
+    columns: [std_itm_no, ksd_itm_no, rptt_ksd_itm_no, fss_itm_no]   # 전부 12자 고정
+    sql: (length(trim(C)) <> 12)
+    실측_2026-08-30: std 127(판매중 3) · ksd 67 · rptt 16 · fss 0 = 210행
+    🔴_적용금지: >-
+      mtco_itm_no 는 운용사 내부번호라 가변 길이 — 짧은 값 7,962행은 정상이다(리드 판정 08-31,
+      query_rules.펀드단위 참조). 기관코드(or_co·trusc)는 code_width 로 살린다. 설명 텍스트 컬럼에 걸지 말 것.
+    형식정규식_기각: >-
+      12자를 채운 이탈('KRdfdfsdfsdf'·'KRZdfdfdfdfd'·'kR5205A22251' 류)은 길이로 못 잡으나 소수라
+      형식 정규식은 비용 대비 **기각**(리드 판정 08-31). 식별자 조인은 어차피 실물 대조(kg_alias)를 거친다.
+
+  # ── 수치 컬럼의 0 처리 (주최 공지 2026-08-24: 0/결측은 의도된 값 → 빼거나 "없다"고 응답) ──
+  zero_as_missing:
+    _note: >-
+      🔴 기본 규칙 — 수치 컬럼을 **정렬·필터·집계에 쓸 때는 IS NOT NULL AND <> 0** 을 건다. 개별 조회에서 0 은
+      "수록되어 있지 않습니다" 로 답한다(값을 고쳐 채우지 말 것). 단 아래 zero_is_value 컬럼은 0 이 실제값이므로 예외.
+      1차 규칙 fd_nast_suma(0값 294) · 수익률_9기간전부0(69) 은 2차에 해당 행이 0건이라 **삭제**했다.
+    보수_3종전부0:
+      규칙: or_co_rwrd_r=0 AND sale_co_rwrd_r=0 AND trusc_rwrd_r=0 인 행을 보수 결측으로 취급
+      영향: 전체 715(1,081 은 or_co_rwrd_r=0 단독 행수 — 2026-09-02 확정) · 판매중 101 · 판매중·공모 29
+      evidence_grade: B
+      근거: 운용·판매·수탁이 동시에 0 인 공모펀드는 존재하지 않는다. 개별 항목 0(사무관리보수 등)은 정상값.
+      sql: (or_co_rwrd_r = 0 AND sale_co_rwrd_r = 0 AND trusc_rwrd_r = 0)
+    zero_is_value:
+      _note: 0 이 "해당 없음/미보유" 라는 실제 정보인 컬럼. 정렬·필터에서 배제하지 말 것.
+      columns:
+      - zrin_dmst_stk_cmst_rt
+      - zrin_dmst_bd_cmst_rt
+      - zrin_ovrs_stk_cmst_rt
+      - zrin_ovrs_bd_cmst_rt
+      - zrin_fd_cmst_rt
+      - zrin_liqt_cmst_rt
+      - zrin_etc_ast_cmst_rt
+      - ofwk_trus_rwrd_r      # 총보수 합산 성분 — 0 제외는 합산값에 적용 (컬럼 note 참조)
+      - prfd_attr_cnt         # 목록 길이 (수치 랭킹 축 아님)
+      # 🔴 2026-08-26 주최 답변으로 해제: fd_last_dstb_r(분배율) · fd_mm1_ern_r(1개월수익률)
+      #     — "수익률·총보수 같은 컬럼 질의 시 값이 0 인 행은 아예 포함하지 않는다".
+    센티넬:
+      fd_last_dstb_r: -100 (73행, 전부 판매완료) — 정렬 전 > -100
+      수익률_8기간: < -100 은 오류값 — 2차 0건이나 규칙 유지(query_rules.수익률정상)
+
+  # ── 숫자형 표기가 흔들리는 컬럼 ──────────────────────────────────────
+  numeric_string_columns:
+    _note: REAL 저장(1.0~6.0 · 0.0/1.0). 비교 전 CAST(… AS INTEGER). 0패딩 코드(fd_set_pcd·pfiv_sale_cntl_tcd·fd_estb_ctry_cd·or_co·trusc·식별번호)는 build_db CODE_COLUMNS 로 문자열 보존됨.
+    columns:
+    - zrin_fd_ivst_risk_gcd
+    - zrin_btyp_cd
+    - zrin_pcd
+    - frc_bpr_itm_yn
+    - hdge_fd_yn
+    - ofsfd_yn
+    규칙: 비교 전 CAST(컬럼 AS INTEGER)
+    날짜_REAL: fd_daily_bas_dt · fd_price_bas_dt · fd_last_dstb_actg_bss_dt · fd_last_dstb_actg_eot_dt 는 yyyymmdd 가 REAL(20260821.0)로 저장 — CAST 후 문자열 비교.
+
+  # ── 원본 따옴표 오염 (1차 사고 — 2차에서 소멸) ──────────────────────
+  contaminated_rows:
+    _note: >-
+      ✅ 2026-08-25 — 감지 조건(mtco_itm_no LIKE '%"%' OR itm_no='"') 0행. 1차의 오염 66행/9종목·귀속표는 2차 데이터에 없다.
+      감지 조건은 재적재 시 재감지용으로 유지한다.
+    감지: mtco_itm_no LIKE '%"%' OR itm_no = '"'
+    영향_2차: 0
+
+  # ── 같은 뜻인데 표기가 갈리는 값 ──────────────────────────────────────
+  value_variants:
+    _note: 정확일치 조회 시 누락. 조회 전 정규화하거나 두 표기를 모두 허용할 것
+    zrin_fd_ivst_risk_grd_nm:
+      매우 높은 위험: []
+      높은 위험: ['높은위험']       # 20행
+      다소 높은 위험: []
+      보통 위험: ['보통위험']       # 8행
+      낮은 위험: []
+      매우 낮은 위험: []
+
+  invalid_values:
+    _note: >-
+      등재 0건 유지. 🔴 2026-08-30 C-4-03 재실측 — 구 기술 "1차 이탈값 5종 전부 소멸" 은 부정확했다. 3종만 소멸이고 2종은 남아 있으며 성격이 서로 다르다:
+        · '20054.0' · '06' · '해외' → 소멸 확인.
+        · '00080008' 4,536행(or_co_xtn_itt_cd) → 🔴 **이탈값이 아니다. 미래에셋자산운용**
+          (codebooks/asset_manager.csv status=confirmed · 판매중 2,306). 1차가 최대 운용사 코드를 오염값으로 잘못 올렸던 것 —
+          **이 값을 배제하면 미래에셋 펀드가 통째로 사라진다. 절대 필터에 걸지 말 것.**
+        · 'KRZ50226929C' 1행(ksd_itm_no) → 여전히 이탈값. 단 단독 건이 아니라 KRZ 절단 계열의 일원이다
+          (KRZ · KRZ500 · KRZ0 · KRZ5 … 고정 12자에서 길이 이탈 67행).
+      → 교훈: 개별 값 열거는 이 데이터에 맞지 않는다(정상값을 오염으로 올리고, 같은 계열을 놓친다). 형식 이탈은 길이·형식 규칙으로 판정한다.
+        미판정 상태이며 규칙안은 검토기록 `공모펀드_검토기록_2026-08-30.md` §9-2 에 있다.
+
+  constant_columns:
+    _note: >-
+      2차에서 상수 컬럼 없음 — 1차의 hdge_fd_yn·ofsfd_yn 은 사모 유입으로 1 값이 생겼다(210·116행).
+      🔴 2026-08-30 C-4-06 재실측 — 구 기술 "공모 한정 시 사실상 상수" 는 두 컬럼 중 하나에만 맞다:
+        · hdge_fd_yn  전체 0:23,466 / 1:210  · **공모 한정 0:14,716 (전부)** → 공모 한정 상수 ✅
+        · ofsfd_yn    전체 0:23,560 / 1:116  · 공모 한정 0:14,606 / **1:110** → ❌ **상수가 아니다.**
+          공모·역외펀드 110행이 실재하므로 '공모에는 역외펀드가 없다' 는 취지의 답변을 하지 말 것.
+        · frc_bpr_itm_yn 전체 0:23,263 / 1:413 · 공모 한정 0:14,626 / 1:90 (참고 — 원래도 상수 아님)
+
+query_rules:
+  종목단위: 행 = itm_no (dedup 불필요 — 2차)
+  펀드단위:
+    text: >-
+      GROUP BY or_co_xtn_itt_cd,
+               COALESCE(CASE WHEN length(mtco_itm_no) >= 7 THEN mtco_itm_no
+                             ELSE substr('0000000' || mtco_itm_no, -7) END, public_funds.itm_no)
+    enforce:                       # P0-2a · 대응 가드 ensure_fund_distinct_count (침묵 조건 M:FUNDUNIT)
+      enabled: true                # 2026-09-03 전환 — 섀도 84문항 'SQL 다름' 0 · 동일 SQL 12 확인 후
+      when:
+        tables: [public_funds]
+        question: {any: [몇 개, 개수, 얼마나 많], not_any: [클래스]}
+        sql: {has: ["count(*)"], lacks: ["union", "group by", "펀드수"]}
+      action: replace_expr
+      # 🔴 리터럴 "COUNT(*)" 로는 안 된다 — `COUNT(*) AS 개수` 처럼 별칭이 붙으면 그 별칭이 남아
+      #    `AS "펀드수" AS 개수` 로 문법이 깨진다(2026-09-03 X9·X22 실측). 별칭까지 함께 먹는다.
+      from_pattern: 'COUNT\s*\(\s*\*\s*\)(?:\s+AS\s+(?:"[^"]+"|\w+))?'
+      sql: 'COUNT(DISTINCT {fund_key}) AS "펀드수", COUNT(*) AS "클래스수"'
+      # 🔴 UNION 가지 안에서는 열 수를 바꿀 수 없다(양쪽 SELECT 열 수가 어긋나 SQL 이 죽는다).
+      #    축(무엇을 세는가)만 고치고 클래스수 병기는 포기한다 — 축이 오답의 원인이고 병기는 부가다.
+      sql_union: 'COUNT(DISTINCT {fund_key}) AS "펀드수"'
+      mark: FUNDUNIT
+  # 🔴 itm_no 는 반드시 한정한다(JOIN 시 별칭을 쓰면 p.itm_no) — 2026-09-02 R2 재검: 비한정 itm_no 를 LEFT JOIN ext_fund_page 에 옮겨 모호 컬럼 기각
+  # 펀드단위 근거(사람용 — 프롬프트 비대상): zero-pad 7자 규약 정본은 리드 판정 08-31. 실측 — 기본모수 패딩 병합
+  # 전수 대조 충돌 0건 · 짧은 mtco 7,962행 정상(가변 길이). 검증 수치(08-31 재실측): 더미 배제 후 합성키 distinct
+  # 14,467(원값 · 판매중 4,340) · zero-pad 후 14,409(판매중 4,305). 구 08-25 의 14,522·4,342 는 반복문자 규칙 미적용
+  # 시점, 1차의 4,643 은 1차 모수. 12자리 더미 '000000000000' 은 배제 조건에 걸린다. (audit EN-Fund/EN-Fund-pad 가 검증)
+  펀드단위_근거: >-
+    GROUP BY mtco_itm_no 단독은 틀린 집계 — 415종의 값이 2개 이상 운용사에 걸친다. 짧은 mtco 는 정상 값이며
+    zero-pad(7자)가 정본, 길이 8+ 는 자르지 말 것. 더미 mtco(기본모수 11행)는 패딩하면 남남끼리 뭉친다 —
+    itm_no 로 폴백하거나 행 단위로 둔다(역외 NULL 110행과 같은 처리).
+  추천개수: "추천·상위·Top-N 질의에 개수가 없으면 LIMIT 5 (개수를 말했으면 그 수) — 답에 '상위 5개 기준' 을 밝힌다"   # 08-31 paired: 미지정 시 30행이 나가 gold(5)와 어긋났다
+  # ── 범주 의미 축 — columns 판정을 규칙으로 승격 (08-31 커버리지 감사: 값 목록만 실리고 의미가 안 실리던 축) ──
+  개인법인:
+    triggers: [개인, 법인]
+    text: >-
+      pers_corp_desc 의 '해당없음'(기본모수 6,864행)은 결측이 아니라 **개인·법인 전용이 아닌 일반 펀드**다.
+      '개인이 가입할 수 있는' = pers_corp_desc IN ('개인','해당없음') · '법인 전용' = '법인' ·
+      '개인 전용' = '개인'. '개인'만 걸면 일반 펀드 6,864행이 통째로 빠진다. 답에 전용/일반 구분을 밝힌다.
+  해외구분:
+    triggers: [해외, 국내외, 글로벌]
+    text: >-
+      해외 투자 여부는 ovrs_fd_desc('해외' 4,483 · '국내외혼합' 878 · '국내' 3,498 — 기본모수) — '해외 투자 펀드' 는
+      IN ('해외','국내외혼합') 이 기본(혼합 포함 여부를 답에 밝힌다). 세부 지역(아시아·북미 등)은 fd_ivst_rgn_desc.
+  # 🔴 2026-08-31 밤 정정 — 구 '헤지펀드없음' 규칙은 **오거절을 만들던 오류**였다(리드 지적).
+  #    hdge_fd_yn=1 이 판매중·공모 0행인 것은 맞지만(210행 전부 사모), 그 플래그는 "펀드 자체가
+  #    사모 헤지펀드로 등록됐는가" 만 표시한다. 개인이 공모로 살 수 있는 헤지펀드는 **사모투자재간접
+  #    공모펀드** 형태로 실재한다 — 실측 66행/14펀드(미래에셋헤지펀드셀렉션·타임폴리오위드타임·
+  #    머스트원앤온리 등). 플래그 한 컬럼만 보고 "없다" 고 단정해 조회조차 하지 않았다.
+  헤지펀드:
+    triggers: [헤지펀드, 헤지 펀드, 헤지 전략, 절대수익]
+    text: >-
+      🔴 hdge_fd_yn 으로 풀지 말 것 — 그 플래그는 사모 등록분만 표시해 공모에서 0행이고, 그걸 근거로
+      "없다" 고 답하면 오답이다. 공모로 판매되는 헤지펀드는 **사모투자재간접 공모펀드** 형태다:
+      (zrin_ptn_nm = '글로벌헤지전략' OR itm_nm LIKE '%헤지펀드%' OR itm_nm LIKE '%사모투자재간접%')
+      — 기본모수 실측 66행/14펀드(2026-08-31). 답변에는 "사모 헤지펀드에 재간접 투자하는 공모펀드"
+      라는 구조를 밝힌다. 🔴 '인덱스헤지'·'(H)' 는 환헤지(exchdg_yn)라 헤지펀드가 아니다 —
+      이름에 '헤지' 만 걸면 환헤지 상품이 섞인다. 시장중립(zrin_ptn_nm='시장중립')은 별개 전략이라
+      질문이 '절대수익·시장중립' 을 명시할 때만 포함하고, 포함 여부를 답에 밝힌다.
+      🔴 이 펀드들은 **공모**다 — 종목명의 '사모투자재간접형' 은 '사모펀드에 재간접 투자하는' 이라는
+        투자 대상 표기이지 이 상품이 사모라는 뜻이 아니다. 실측에서 답변기가 '사모 헤지펀드를 대신
+        소개한다' 고 오독했다 — 조회 모수가 공모임을 답에 분명히 밝힌다.
+  # 🔴 2026-08-31 밤 신설 — 마스터 45컬럼에 없다고 '없는 정보' 로 단정하던 오거절을 막는다(리드 지적 후속).
+  #    설정일·환매조건은 마스터에 없지만 **투자설명서 수집분(ext_fund_page)에 있다**. 커버리지 실측(기본모수 8,969 대비).
+  설명서항목:
+    # 🔴 2026-09-03 전달 감사 H1 — `구조·투자전략·전략·동향` 추가.
+    #    공식 예시 OFFICIAL-002 "국민성장펀드의 **구조와 투자전략 동향** 등 찾아서 알려줘" 에서
+    #    이 규칙이 안 실렸고, 그래서 `ext_fund_page` 이름이 **프롬프트 어디에도 없었다** —
+    #    스키마 프롬프트는 cross 일 때만 ext_* 를 싣는데 그 판정도 False 였다(pipeline._FUND_EXT_HINTS 미발동).
+    #    모델은 존재를 모르는 테이블을 쓸 수 없다. 근거: docs/rule_delivery_audit_result_2026-09-03.md §1-2.
+    triggers: [설정일, 설정된, 언제 설정, 오래된, 환매, 환매수수료, 환매 조건, 환매금지, 모펀드, 투자설명서, 설명서,
+               구조, 투자전략, 전략, 동향]
+    text: >-
+      마스터에 없는 아래 항목은 투자설명서 수집분 ext_fund_page 에 있다 — JOIN 으로 답한다.
+      조인: ext_fund_page.itm_no = public_funds.itm_no
+      🔴 두 테이블 모두 itm_no 를 가지므로 별칭을 붙이고 **모든 컬럼을 한정**한다 —
+        FROM public_funds p JOIN ext_fund_page e ON e.itm_no = p.itm_no … SELECT p.itm_no, e.estb_dt
+        (한정하지 않으면 'ambiguous column name: itm_no' 로 실행이 죽는다)
+      · estb_dt 설정일(YYYYMMDD 문자열, 8,408행 93.7%) — '가장 오래된/신생 펀드' 는 이걸로 정렬한다
+      · redemption_fee_desc 환매수수료 서술(297행 3.3% — **모수를 반드시 밝힌다**) ·
+        redemption_prohibited 환매금지 여부(93.7%) · redemption_pay_rule 환매대금 지급일
+      · total_fee_pct·sale_fee_pct·mgmt_fee_pct·trust_fee_pct·admin_fee_pct 설명서 보수(%, 93.7%)
+        — 마스터 보수 4종(‰)과 **단위가 다르다**. 섞어 쓰지 말고 어느 출처인지 밝힌다.
+      · class_desc_ko 클래스 설명(92.2%) · mgmt_co_nm 운용사명 · mother_fund_names_raw 모펀드명
+      🔴 2026-09-04 추가(KG-006 실측) — **ext_fund_page 를 FROM 에 두지 않는다.** 마스터가 FROM,
+      ext_* 는 언제나 JOIN 이다. ext_fund_page 에는 prvo_pbff_desc·sale_yn·itm_nm·trusc_xtn_itt_cd·
+      or_co_xtn_itt_cd·mtco_itm_no 가 **없다** — FROM 을 뒤집으면 기본모수 조건도 펀드단위 키도 못 쓰고
+      "같은 이름의 항목이 여러 자료에" 로 기각된다(운용사·수탁사 질의가 통째로 죽었다).
+            🔴 커버리지가 100% 가 아니므로 "N건 중 M건에 수록" 을 답에 밝힌다. 수록이 없는 항목
+      (운용역 개인·운용 전략 서술)은 여전히 답변 불가다.
+  # 🔴 2026-08-31 밤 신설(FND-030 실측) — '미래에셋증권에서 살 수 있는' 질의가 KG 의 수탁사 노드로 가서
+  #    trusc_xtn_itt_cd='0016022' 0행 → "데이터에 없다" 오답. 정작 이 질문 전용 컬럼(thco_sale_yn)이 있다.
+  당사판매:
+    triggers: [미래에셋증권, 당사, 우리 회사, 우리회사, 살 수 있는, 판매하는, 취급, 판매사]
+    text: >-
+      🔴 '미래에셋증권에서 살 수 있는/취급하는' 은 **판매사** 질의다 — thco_sale_yn = 'Y' 로 푼다
+      (기본모수 8,550행 · 2,908펀드. 나머지 419행은 NULL = 당사 미취급).
+      미래에셋증권을 운용사(or_co_xtn_itt_cd)나 수탁사(trusc_xtn_itt_cd)로 풀면 안 된다 —
+      운용은 미래에셋**자산운용**(별개 법인)이고, 수탁사 코드로 풀면 0행이 난다.
+      역할 3종을 구분한다: 운용사 or_co_xtn_itt_cd · 수탁사 trusc_xtn_itt_cd · 당사 취급 thco_sale_yn.
+  # 🔴 2026-09-01 신설(FND-035 실측) — "가장 많이 운용하는 운용사" 에 존재하지 않는 mtco_nm 을 쓰고
+  #    재생성도 같은 컬럼을 반복해 오거절. 운용사 식별·이름·집계 단위 세 가지가 전부 어긋났다.
+  운용사질의:
+    triggers: [운용사, 운용하는, 자산운용, 운용회사, 운용 회사]
+    text: >-
+      🔴 운용사는 or_co_xtn_itt_cd(운용회사대외기관코드)로 식별한다 — 운용사 '이름' 컬럼은 마스터에
+      없다. mtco_nm 은 **존재하지 않는 컬럼**이고, mtco_itm_no 는 운용사가 아니라 운용사가 매긴 펀드
+      번호다. 이름은 ext_fund_page.mgmt_co_nm 으로 병기한다(코드 폭이 7·8자 혼재라 printf 정규화 —
+      합병 이력으로 코드당 이름 2종인 사례 3건이 있으므로 **코드가 정본이고 이름은 참고 병기**다).
+      '가장 많이 운용/펀드 수' 는 클래스 행 수(COUNT(*))가 아니라 **펀드 수**다 — 실측: 두 기준의
+      순위가 다르다(펀드 수 2위 235 vs 클래스 수 2위 850). 워크드 예시(그대로 쓴다):
+      SELECT printf('%08d', CAST(p.or_co_xtn_itt_cd AS INTEGER)) AS or_co, MAX(e.mgmt_co_nm) AS mgmt_nm,
+      COUNT(DISTINCT COALESCE(CASE WHEN length(trim(p.mtco_itm_no)) >= 7 THEN trim(p.mtco_itm_no)
+      ELSE substr('0000000' || trim(p.mtco_itm_no), -7) END, p.itm_no)) AS fund_cnt, COUNT(*) AS class_cnt
+      FROM public_funds p LEFT JOIN ext_fund_page e ON e.itm_no = p.itm_no
+      WHERE p.sale_yn = '판매중' AND p.prvo_pbff_desc = '공모'
+      GROUP BY 1 ORDER BY fund_cnt DESC LIMIT 5
+      — 답에는 펀드 수 기준임과 클래스 수를 병기한다(실측 1위: 823펀드/2,066클래스).
+  # 🔴 2026-09-01 신설(FND-038 실측) — "공모펀드는 유형별로 몇 개씩?" 을 공모/사모 구분으로 읽고
+  #    사모 1,993개까지 답에 넣었다. '유형' 은 자산 유형이지 모집 방식이 아니다.
+  유형별분포:
+    triggers: [유형별, 유형, 종류별, 어떤 유형, 분포, 몇 개씩]
+    text: >-
+      🔴 펀드의 '유형' 은 **자산 유형**이다 — 공모/사모(prvo_pbff_desc)는 모집 방식이지 유형이 아니다.
+      제로인 대유형 zrin_btyp_nm 으로 GROUP BY 한다(기본모수 19종: 해외주식형 2,784 · 주식형 1,773 ·
+      해외기타 801 · 채권형 610 · 채권혼합형 534 … MMF 108 · 부동산형 11 · 특별자산 8).
+      🔴 결측 418행(308펀드)은 버리지 말고 **'제로인 평가 미수록' 이라는 별도 범주로 함께 제시**한다 —
+      COALESCE(zrin_btyp_nm,'(제로인 미수록)') 로 묶는다. 약관 분류(or_attr_desc, 9종)로 답할 때는
+      "약관 분류 기준" 임을 밝힌다. 분포는 클래스 수와 펀드 수를 함께 낸다
+      (COUNT(*) 와 COUNT(DISTINCT 펀드단위키)).
+      🔴 2026-09-04 추가(Z10 실측) — 대유형 19종 **아래에 소분류 zrin_ptn_nm(기본모수 85종)** 이 있다.
+      질문의 유형 낱말이 대유형 19종에 없으면 **소분류로 찾는다** — '인도주식형' 은 존재하지 않는 값이고
+      zrin_ptn_nm = '인도주식'(98클래스/34펀드)이 정답이다. 소분류 상위:
+      일반주식 1,023 · 글로벌라이프싸이클 740 · 글로벌주식 526 · 중국주식 522 · 일반채권혼합 438 ·
+      북미주식 315 · 일반채권 261 · 중소형주식 228 · 글로벌 보수적자산배분 214 · 정보기술섹터 187 ·
+      글로벌채권 186 · 초단기채권 176 · 테마주식 164 · 배당주식 152 · 글로벌신흥국주식 130 ·
+      북미채권 126 · 아시아태평양주식(ex J) 118 · MMF 108 · 인도주식 98 · 글로벌헤지전략 …
+      목록 밖 소분류는 접미사 '형' 을 떼고 LIKE 로 찾는다(zrin_ptn_nm LIKE '%인도%'). 어느 축으로
+      셌는지(대유형/소분류)를 답에 밝힌다.
+  전문투자자코드금지: "pfiv_sale_cntl_tcd 는 코드 의미 미제공(주최 확정) — 어떤 질의에도 조건·정렬로 쓰지 않는다"
+  판매중만: sale_yn = '판매중'
+  구매가능: sale_yn = '판매중'          # 🆕 주최 공지 — 상폐/리스팅종료 외 전부 구매가능. 펀드는 판매완료가 그 경계
+  공모만: prvo_pbff_desc = '공모'       # 🔴 2차엔 사모 8,960행 — 공모 질의 필수 필터
+  # 🔴 enforce 슬롯 (2026-09-03, docs/guard_to_yaml_migration_2026-09-03.md 단계 1)
+  #    `text` 만 프롬프트에 실린다. `enforce` 는 guard.apply_enforce 만 읽는다.
+  #    지금은 `off: true` — 단계 2 섀도에서 코드 가드와 대조한 뒤 켠다(절차 §3: 가드를 먼저 지우지 않는다).
+  기본모수:
+    text: "sale_yn = '판매중' AND prvo_pbff_desc = '공모'  # 집계·Top-N 은 이 조건을 반드시 WHERE 에 넣는다. 모수 8,969 를 답변에 밝힐 것"
+    enforce:                       # P0-1 · 대응 가드 ensure_fund_base_population (침묵 조건 M:BASEPOP)
+      enabled: true                # 2026-09-03 전환 — 섀도 84문항 'SQL 다름' 0 확인 후
+      when:
+        tables: [public_funds]
+        question: {not_any: [사모, 판매완료, 역외, 전체]}
+        sql:
+          lacks: [sale_yn, prvo_pbff_desc]
+          any_of_has: ["order by", "count(", "sum(", "avg("]
+      action: inject_where
+      sql: "sale_yn = '판매중' AND prvo_pbff_desc = '공모'"
+      mark: BASEPOP
+  집계_TopN_필수: >-
+    🔴 집계·Top-N SQL 은 반드시 WHERE 에 sale_yn = '판매중' AND prvo_pbff_desc = '공모' AND <정렬 컬럼> IS NOT NULL AND <정렬 컬럼> <> 0
+    을 포함한다(zero_is_value 컬럼은 0 조건 제외 · 수익률 컬럼이면 수익률정상 추가) — 이 조건이 빠진 집계·Top-N 은 오답이다.
+    판매완료 12,714행은 위험등급·수익률 99% 결측(순자산 92%·유형 79%), 사모는 질의 대상 아님. 결과에 모수·기준일(fd_daily_bas_dt) 병기.
+  # 대표행 근거(08-30 실측): 한화2.2배레버리지 A·C1~C4·Ce 6클래스가 grp '0166750' 하나 — 행 단위면 TOP5 의 3칸 도배.
+  # 이름 파싱 컬럼 금지는 08-30 결정(구조 컬럼으로 충분).
+  대표행: >-
+    🔴 랭킹·Top-N·집계는 클래스(행)가 아니라 펀드 단위다 — 펀드단위 키(or_co_xtn_itt_cd + zero-pad mtco_itm_no)로
+    GROUP BY 하고 펀드당 1행(정렬 컬럼 MAX 인 클래스)만 낸다. 행 단위면 한 펀드의 클래스들이 TOP5 를 도배한다.
+    역외(ofsfd_yn=1)는 mtco_itm_no 가 없어 행 단위로 둔다. 답에는 "클래스 n개" 병기 + 대표 클래스 itm_no.
+  # 수익률극단값 근거(08-30 실측, 판매중·공모 8,969): 1년 >100% 889행 · 3년 >300% 20행. 마이다스 1,436%·소비성장
+  # 394% 는 이후 기점 오류로 확정(08-31 §13-8 — 수익률기점오류_제외), 한화2.2배 387% 는 실제 값(레버리지).
+  # 채권 8/29 결정("사면 안 되는 것만 빼고, 나머지는 넣되 주의 문구")의 공통 패턴.
+  수익률극단값: >-
+    수익률 랭킹에서 극단값을 제외하지 않는다(제외는 수익률기점오류_제외의 검증 3건뿐). 수익률 8기간 컬럼
+    (fd_mm1_ern_r ~ fd_yr5_ern_r)은 전부 누적. SELECT 에 zrin_attr_nms 와 fd_daily_bas_dt 를
+    함께 싣는다 — 답변 규칙이 100% 초과 행에 주의 문구를 붙일 근거다. fd_wk1_ern_r 은 전건 NULL — 쓰지 않는다.
+  ETF제외: itm_nm NOT LIKE '%상장지수%'   # 236행 전부 판매완료 — domestic_etfs 와 중복 가능
+  수익률정상: <질의 대상 기간 컬럼> IS NOT NULL AND <질의 대상 기간 컬럼> > -100   # 질의하는 그 컬럼에만 건다
+  # 수익률기점오류_제외 — 3건 명시는 하드코딩이 아니라 검증 파이프라인의 출력이다:
+  #   탐지(일반 규칙): scripts/scan_return_anomalies.py — 형제 클래스 대비 기간별 이탈 전수 스캔 (DB 갱신 때마다 재실행)
+  #   검증(사람): 전 클래스 × 8기간 표 + (1+r) 배율 상수성 검사 — 상수 ×10.0(마이다스 Ce, 자릿수)·×2.0(소비성장 C-e·
+  #   신한농산물 C2, 분할 미반영)은 시장 성과로 불가능한 장부 오류 (검토기록 §13-8·§13-10, 리드 확정 08-31).
+  #   🔴 스캐너 출력을 검증 없이 배제로 잇지 말 것 — 08-31 실측에서 자동 판정 5건 중 4건이 방향 오탐(중앙값 점령).
+  #   런타임에 "이상치를 의심하라" 류 일반 지시를 주지 않는 이유: 판별식이 형제 그룹 통계라 단일 SQL 로 계산 불가.
+  수익률기점오류_제외:
+    triggers: [수익률, 수익, 성과, 상위, 순위, 랭킹, 추천, 높은, 좋은]
+    text: >-
+      정렬 컬럼이 fd_mm18_ern_r·fd_yr1_ern_r·fd_yr2_ern_r·fd_yr3_ern_r·fd_yr5_ern_r(18개월 이상)이면 WHERE 에
+      itm_no NOT IN ('KR5157450126','KR5153450511','KR5119470012') — 기준가 산정 오류가 검증된 3클래스다.
+      "오류가 확인된 클래스 3건은 순위에서 제외했습니다" 를 답변에 밝힌다. 클래스 단위 제외라 해당 펀드는
+      정상 형제 클래스가 대표행으로 남는다. 단기(1·3·6개월) 랭킹과 개별 조회에는 적용하지 않는다.
+  자산군_주식형: zrin_btyp_nm IN ('주식형','해외주식형') OR (zrin_btyp_nm IS NULL AND (trim(or_attr_desc)='주식형' OR (trim(or_attr_desc) IN ('재간접','파생상품') AND itm_nm LIKE '%(주식%')))
+  태그필터: "',' || prfd_attr_cds || ',' LIKE '%,<코드>,%'  또는  ',' || zrin_attr_nms || ',' LIKE '%,<명칭>,%'"
+  # 국가태그 — 2026-08-31 밤 FND-026 실측: '중국에 투자하는 공모펀드' 가 답변 가능(CHN 560행)인데 거절로 나갔다.
+  # KG 에 국가→태그 매핑이 없고(prfd_attr_cds alias 0건) 태그필터 규칙은 <코드> 자리가 비어 있어,
+  # 플래너가 or_attr_desc='해외주식형'(다른 컬럼 zrin_btyp_nm 의 값)을 지어냈고 값 검사에 걸려 재생성도 실패했다.
+  # 코드는 기본모수 실측(2026-08-31): CHN 560 · USA 333 · IND 135 · VNM 119 · JPN 79 · RUS 51 · BRA 42 · HKG 30 · KOR 16 · DEU 11 · IDN 7.
+  국가태그:
+    triggers: [중국, 미국, 인도, 베트남, 일본, 러시아, 브라질, 홍콩, 독일, 인도네시아, 차이나, 차이나본토, 중국본토]
+    text: >-
+      🔴 국가는 fd_ivst_rgn_desc 로 풀 수 없다 — 그 컬럼은 지역 6종(글로벌·국내·아시아·남미/북미·이머징/브릭스·유럽)뿐이라
+      '중국' 값이 아예 없고, 중국 펀드가 글로벌·아시아에 흩어져 있다. 국가는 **속성 태그**로 푼다:
+      ',' || prfd_attr_cds || ',' LIKE '%,<코드>,%'  —  중국 CHN · 미국 USA · 인도 IND · 베트남 VNM · 일본 JPN ·
+      러시아 RUS · 브라질 BRA · 홍콩 HKG · 한국 KOR · 독일 DEU · 인도네시아 IDN.
+      보조로 ',' || zrin_attr_nms || ',' LIKE '%,중국,%' (제로인 국가 명칭) 또는 itm_nm LIKE 를 OR 로 더할 수 있다.
+      목록에 없는 나라는 이름 검색(itm_nm LIKE)으로만 풀고, 그 사실을 답에 밝힌다.
+  # 🔴 2026-09-04 신설(FND-005 실측) — 마스터 보수를 '0.015%' 로 적어 10배 틀렸다. ‰ 규칙은
+  #    answer_rules 에 이미 있었고 지켜지지 않았다. 값 변환은 문장이 아니라 SQL 이 한다 —
+  #    순자산_억원 별칭과 같은 규약이고, 그쪽은 실측에서 지켜지고 있다(Y2·V5·FND-C01).
+  보수단위:
+    triggers: [보수, 총보수, 수수료, 비용, 저렴, 싼, 낮은]
+    text: >-
+      🔴 마스터 보수 4종(or_co_rwrd_r 운용 · sale_co_rwrd_r 판매 · trusc_rwrd_r 수탁 · ofwk_trus_rwrd_r 사무관리)은
+      **‰(천분율)** 이다 — 값÷10 이 %. 보수를 SELECT 할 때는 **% 환산 별칭을 반드시 함께 낸다**:
+        ROUND((or_co_rwrd_r + sale_co_rwrd_r + trusc_rwrd_r + ofwk_trus_rwrd_r) / 10.0, 4) || '%' AS "총보수_퍼센트"
+      (순자산_억원 별칭과 같은 규약이다 — 답변기가 단위를 바꾸지 않게 하는 유일한 방법.)
+      총보수 컬럼은 없으므로 네 항목의 합이 '총보수(4항목 합)' 이고 기타비용(매매·중개수수료)은 빠져 있다.
+      설명서 보수(ext_fund_page.total_fee_pct 등)는 **이미 %** 라 환산하지 않는다 — 두 출처를 한 답변에
+      섞을 때는 어느 쪽인지 밝힌다.
+  연금가능: han_clas_policies LIKE '%퇴직연금%' OR han_clas_policies LIKE '%개인연금%'  (결측 시 itm_nm LIKE '%연금%' 보조)
+  # 🔴 2026-09-04 신설(FND-006 실측) — "MMF를 제외하고 순자산 큰 5개" 가 zrin_ptn_nm='MMF' 로 나가 정반대 집합을 셌다.
+  #    머리줄까지 '제로인유형명 MMF 기준' 이라 적혀 사용자는 뒤집힌 걸 알 수 없었다. 부류 단위 규칙 하나.
+  부정조건:
+    triggers: [제외, 빼고, 말고, 아닌, 없는, 除, 제외하고, 를 뺀, 은 빼]
+    text: >-
+      🔴 질문의 배제 낱말(제외하고·빼고·말고·아닌)은 **부정 조건**이다 — `<>` · `NOT IN` · `NOT LIKE` 로 푼다.
+      등호로 뒤집으면 정반대 집합이 나오고, 숫자가 그럴듯해서 오답인 줄도 모른다
+      (2026-09-04 FND-006 실측: 'MMF를 제외하고' 가 zrin_ptn_nm='MMF' 로 나가 163억 1건 — 정답은 1.22조 이하 5건).
+      · 유형 배제: zrin_ptn_nm <> 'MMF' AND zrin_btyp_nm NOT IN ('MMF','외화 MMF')  ← 두 컬럼에 다 걸어야 샌 것이 없다
+      · 이름 배제: REPLACE(itm_nm,' ','') NOT LIKE '%<키워드>%'
+      🔴 NULL 주의 — `col <> 'X'` 는 NULL 행을 **떨어뜨린다.** 배제 대상이 결측 있는 컬럼이면
+      (COALESCE(col,'') <> 'X') 로 쓴다(zrin_* 는 판매중 22% 결측).
+      답변에는 무엇을 제외했는지 밝힌다("MMF 유형은 제외했습니다").
+  # 🔴 2026-09-04 신설 — answer_rules '질문이 두 부분이면 둘 다 답한다' 의 **플래너 쪽 짝**.
+  #    조립기는 SQL 이 가져오지 않은 수를 만들 수 없다 — KG-005 는 217/906 한 행만 받아 놓고
+  #    '그중 삼성자산운용' 207/850 을 답할 방법이 없었고, X22 는 0건 카운트만 받아 '실제 수탁사' 를 낼 수 없었다.
+  복합질의:
+    triggers: [그중, 그 중, 중에서, 이고, 이며, 는 몇, 실제, 각각, 포함하면, 까지 포함]
+    text: >-
+      🔴 질문이 두 수를 묻거나(A 는 몇 개고 **그중** B 는 몇 개) 조건 뒤에 되물음이 붙으면
+      (0건인데 **실제로는** 어디야), 한 SQL 이 **두 답을 모두** 담아야 한다. 답변기는 결과에 없는 수를
+      만들 수 없다 — 앞부분만 담긴 결과가 오면 뒷부분은 영영 답이 안 나간다.
+      · 부분집합 두 수: 조건부 집계 한 번으로 낸다 —
+        COUNT(DISTINCT CASE WHEN <조건B> THEN {펀드키} END) AS "B_펀드수", COUNT(DISTINCT {펀드키}) AS "전체_펀드수"
+      · 0건 + '실제로는': 0건 카운트와 **실제 분포 상위**를 UNION ALL 로 함께 낸다
+        (예: KB자산운용 × 국민은행 수탁 0건 + KB자산운용의 실제 수탁사 GROUP BY 상위 3).
+      · '~까지 포함하면': 두 모수를 각각 내고 **합계도 결과에 담는다** — 합산은 답변기가 아니라 SQL 이 한다.
+  종목명검색: >-
+    🔴 공백을 무시하고 매칭한다 — REPLACE(itm_nm,' ','') LIKE '%<공백 제거한 키워드>%'.
+    종목명 표기의 공백이 제각각이라('삼성 베스트 MMF 법인 제1호') 양쪽을 정규화하지 않으면
+    있는 상품을 놓친다 — 실측: '미래에셋 코어테크' 그대로 0행 / 공백 무시 14행, 'AI 반도체' 0행 / 4행.
+    itm_nm LIKE '%<키워드>%' 부분일치. 종목명은 키가 아니다(45명칭 중복) — 결과 복수면 클래스 목록으로 묶고 itm_no 병기.
+    itm_abrv_nm 은 클래스를 구분 못 하므로(약어 하나에 최대 8클래스) 필터에 쓰지 말 것.
+    🔴 호수(N호)는 '%2호%' 로 풀지 말 것 — 12호·20호를 오포함(전체 모수 403행). 숫자 경계로: (itm_nm LIKE '%제2호%' OR itm_nm GLOB '*[^0-9]2호*').
+    호가 다르면 **다른 펀드**다(클래스가 아니다) — 같은 시리즈 질의는 호별로 묶어 제시.
+    🔴 클래스 표기('종류A'·'종류C'·'A-e'·'C-P2E')는 **itm_nm 에 있다** — han_clas_nm 이 아니다.
+    han_clas_nm 은 '수수료선취-오프라인' 형식이라 클래스 문자로 필터하면 **반드시 0행**이다
+    (2026-09-04 AA24 실측: han_clas_nm='종류 A' → 0행, 실재 값 185.21% 를 놓쳤다).
+    이름+클래스 질의는 두 조건을 모두 itm_nm 에 건다:
+    REPLACE(itm_nm,' ','') LIKE '%미래에셋코어테크%' AND REPLACE(itm_nm,' ','') LIKE '%종류A%'
+    (기본모수 실측: itm_nm 에 '종류A' 539행). 온라인 클래스는 'A-e'·'Ae' 표기가 섞여 있어
+    '종류A' 로 걸면 A-e 도 함께 걸린다 — 결과가 복수면 클래스별로 나눠 제시하고 han_clas_nm 으로 어느 클래스인지 말한다.
+  이름표기_구조어휘:
+    triggers: [목표전환, 전환형, 인덱스, TDF, TIF, TRF, 커버드콜, 만기, 레버리지, 인버스, 월지급, 분배, 배당, 인컴, 분할매수, 빈티지]
+    text: >-
+      구조·전략 어휘는 태그(zrin_attr_nms, 보유 8,550/8,969)를 1순위로, 종목명 LIKE 를 보조로 쓴다.
+      · 태그로 충분: 월지급 → '분배식' · 레버리지 여부 → '레버리지' · 인버스 → '리버스' · 분할매수 → '분할매수'
+      · 태그 OR 이름: 목표전환 → (태그 '목표달성전환' OR itm_nm LIKE '%목표전환%') · 인덱스 → (태그 '인덱스' OR itm_nm LIKE '%인덱스%') ·
+        TDF → (태그 LIKE 'TDF%' OR itm_nm LIKE '%TDF%') · 빈티지 → 태그 'TDF2045' OR itm_nm LIKE '%2045%'
+      · 이름에만 있는 축(레버리지 배수 '2.2배'·만기 '2027'·통화 'USD'): itm_nm LIKE 한 식으로 개별 조회하고 "종목명 표기 기준" 을 병기한다.
+      🔴 '배당'·'인컴' 은 투자 전략(태그 '배당주')이지 분배 방식이 아니다. 분배 방식 질의는 태그 '분배식' + fd_last_dstb_r.
+      🔴 '전환형' 은 목표전환과 연금·엄브렐러 전환이 다른 개념 — 질의 어휘('목표'·'연금')로 가른다.
+  이름표기_우선순위:
+    triggers: [헤지, 환헤지, 재간접, 파생, 연금, 사모, 통화, 자산군, 주식형, 채권형, 혼합형, 괄호]
+    text: >-
+      구조 컬럼이 있는 축은 그쪽이 1순위, 종목명 LIKE 는 폴백 — 환헤지 exchdg_yn · 재간접/파생 or_attr_desc · 연금 han_clas_policies · 사모 prvo_pbff_desc · 통화 curr_cd.
+      종목명 괄호 자산군('(주식)' 등)은 약관 분류라 제로인 zrin_btyp_nm(실질)과 15.6% 어긋난다 — 자산군은 zrin 우선, 괄호는 "약관 분류 기준" 병기.
+  영문명:
+    triggers: [영문, 영어, English, english]
+    text: >-
+      🔴 영문 상품명 질의도 itm_nm 으로 푼다 — itm_eng_nm 은 NULL 0 이지만 73% 가 한글 복사·대문자화 값이라 LIKE 로 풀면 대부분 놓친다.
+      영문명을 답에 쓸 때는 (itm_eng_nm <> itm_nm AND itm_eng_nm NOT GLOB '*[가-힣ㄱ-ㅎ]*') 인 값만, 아니면 "영문명 미제공".
+  벤치마크검색:
+    triggers: [벤치마크, 지수, 추종, KOSPI, 코스피, MSCI, S&P, 인덱스]
+    text: >-
+      bmrk_nm LIKE '%<지수명>%' (복합식 'KOSPI200 25% + 종합채권01Y 75%' 안의 성분까지 포함 — 정확일치는 KOSPI200 47%·MSCI ACWI 83% 를 놓친다).
+      영문 지수명은 bmrk_nm OR bmrk_eng_nm. 결측은 "평가사 벤치마크 정보 미수록" — 판매중·공모 결측 418행은 제로인 평가 블록이 통째로 빈 행이다.
+
+# ── 게이트 상수 — HCX 호출 없이 즉답 (R-5 ① 층. 2026-09-01 FND-017 실측: '연평균' 규칙이 프롬프트에
+#    실렸는데 플래너는 SQL 을 만들고 답변기는 조회 결과를 두고도 "찾을 수 없다"+출처 안내 면책으로 답했다.
+#    층끼리 어긋나는 케이스라 결정층 즉답으로 내린다 — 기타비용 gate_constants 승격과 동형) ──
+gate_constants:
+  - column: "(연평균·연환산 수익률)"
+    value: "미수록"
+    triggers: ["연\\s*평균", "연\\s*환산"]
+    reason: "연평균·연환산 수익률은 데이터에 없음 — 수익률 8기간은 전부 누적(clarify.수익률) → HCX 없이 즉답"
+    answer: "연평균(연환산) 수익률은 데이터에 수록되어 있지 않습니다. 수익률은 모두 누적 기준으로 1·3·6·18개월, 1·2·3·5년의 8개 기간이 수록되어 있습니다. 누적 수익률 기준의 조회나 순위를 원하시면 기간을 지정해 다시 질문해 주세요."
+  # 2026-09-01 FND-C04 실측 — 플래너가 "판단할 정보가 없다"(거짓 — han_clas_fee_type·보수 4종 실재) +
+  # '전문가 조언' 면책으로 오거절. 조건부 답변은 결정적 지식이라 게이트 즉답으로 내린다.
+  # 실측 근거: 종류A 222/224 = 수수료선취(판매보수 평균 5.97‰) · 종류C 250/251 = 수수료미징구(8.06‰) ·
+  # A·C 쌍 보유 121펀드 전부 A 판매보수 < C 판매보수 (2026-09-01 DB 전수).
+  # 2026-09-01 FND-R07 실측 — 플래너 SQL 은 미수록 조회에 성공(30행)했는데 답변기가 "정보가 없다"로
+  # 통째 거절(반쪽 거절 — 017 동형, 층끼리 어긋남). '없음'의 진릿값은 데이터로 확정된 지식이라 즉답으로 내린다.
+  # 실측 근거: redemption_fee_desc 수록 297행/106펀드 전부 부과 서술('없음' 값 0) · 기본모수 조인 미수록
+  # 8,111행 — 미수록≠없음 (2026-09-01 DB 전수).
+  - column: "(환매수수료 없음)"
+    value: "미확정 — 수록분 전부 부과"
+    triggers: ["환매\\s*수수료[^?]{0,20}(없|면제|무료|미징구|않)"]
+    reason: "환매수수료 '없음'은 데이터로 확정 불가 — 조항 수록 297행/106펀드는 전부 부과 서술이고 나머지는 조항 미수록(미수록≠없음) → HCX 없이 즉답"
+    answer: "환매수수료가 '없다'고 명시된 펀드는 데이터에 수록되어 있지 않습니다. 환매수수료 조항이 수록된 297건(106개 펀드)은 모두 기간별 부과 조건이 있는 펀드이며, 나머지 펀드는 환매수수료 조항 자체가 수록되어 있지 않아 '없음'으로 단정할 수 없습니다. 특정 펀드의 환매수수료 조건이 궁금하시면 펀드명을 알려주세요."
+  - column: "(A/C 클래스 선택)"
+    value: "투자 기간에 달린 선택"
+    triggers: ["[AaCc]\\s*클래스[^?]{0,30}[AaCc]\\s*클래스[^?]{0,30}(유리|나은|나을|낫|좋|추천|골라|선택|어떤)"]
+    reason: "A/C 클래스 비교는 투자 기간에 달린 선택 + 구조는 데이터로 확정(A=선취·판매보수 낮음, C=미징구·높음 — 쌍 보유 121펀드 전부 A<C) → HCX 없이 즉답"
+    answer: "같은 펀드의 A클래스와 C클래스 중 어느 쪽이 유리한지는 투자 기간에 따라 달라지는 투자자의 선택입니다. 데이터 기준으로 A클래스는 선취판매수수료를 내는 대신 연간 판매보수가 낮고, C클래스는 판매수수료가 없는 대신 판매보수가 높습니다(A·C 클래스를 모두 둔 121개 펀드 전부에서 A의 판매보수가 C보다 낮았습니다). 일반적으로 장기 투자일수록 A클래스, 단기 투자일수록 C클래스가 비용 면에서 유리한 구조입니다. 특정 펀드명과 예상 투자 기간을 알려주시면 해당 펀드의 클래스별 보수를 비교해 드리겠습니다."
+  # 🔴 2026-09-04 신설(DOM-10 실측) — "이자형과 배당형 각각 몇 개" 에 UNION 의 0행 가지가 사라져 컬럼 헤더만 남았고,
+  #    답변기가 그 헤더를 세어 "이자형 1개" 라는 실재하지 않는 수를 냈다. int_dvd_desc 는 기본모수 전건 '배당' 이라
+  #    애초에 SQL 을 낼 축이 아니다 — 상수 컬럼 게이트로 내린다. 근거: 판매중·공모 8,969 전건 '배당'(2026-09-04 DB 전수).
+  #    '이자' 2,809 행은 전부 판매완료·사모 쪽이다. auto.yaml distinct_count=2 는 전체 95,619행 기준이라 못 잡는다.
+  # 🔴 2026-09-04 신설(DOM-09 실측) — '국내에서 설립된' 을 fd_ivst_rgn_desc='국내'(투자지역)로 셌다.
+  #    PDF §2.4 가 "펀드가 설립된 나라(투자처가 아님)" 라고 명시적으로 경고한 혼동이다.
+  #    설립국가 컬럼은 기본모수 8,969 중 '000'(미기재) 8,561 = 95.4% — 애초에 셀 수 없다.
+  #    🔴 트리거는 (국내|한국) + (설립|설정) **동시**를 요구한다 — '설정된' 단독은 X19('2025년에 설정된')·
+  #    KG-033('가장 최근에 설정된')·DOM-03('원화가 아닌 통화로 설정된') 이 쓰는 낱말이라 게이트하면 안 된다.
+  #    코드가 있는 행(룩셈부르크 442 등)의 질의도 답변 가능이므로 '설립국가' 낱말만으로 걸지 않는다.
+  - column: "(펀드 설립국가)"
+    value: "95.4% 미기재('000')"
+    triggers: ["(?:국내|한국|우리나라)[^?]{0,8}(?:설립|설정)(?:된|한|되|인)"]
+    reason: "fd_estb_ctry_cd 는 판매중·공모 8,969 중 '000'(미기재) 8,561 = 95.4% — 설립국가로 국내/해외를 셀 수 없음 (투자지역 fd_ivst_rgn_desc 와 다른 축) → HCX 없이 즉답"
+    answer: "펀드가 설립된 국가는 코드가 대부분 기재되어 있지 않아 국내 설립 펀드 수를 셀 수 없습니다. 판매중인 공모펀드 8,969건 중 8,561건(95%)이 미기재이고, 코드가 있는 것은 한국 298건·룩셈부르크 96건·미국 10건·영국 4건뿐입니다. 참고로 '어디에 투자하는가'(국내/해외 구분)나 역외펀드 여부는 별개 항목으로 조회해 드릴 수 있습니다."
+  # 🔴 2026-09-04 신설(DOM-12 실측) — query_rules.전문투자자코드금지 가 플래너 프롬프트에 실려 있는데도
+  #    그 컬럼을 조건에 썼고, 27 이라는 해석 불가한 수를 확정 답변으로 냈다(실제로는 han_clas_policies 텍스트 매칭).
+  #    프롬프트 문구로 내린 금지는 지켜지지 않는다 — 규칙 북 09_forbid 체크리스트 #1 이 예견한 실패다.
+  #    금지 컬럼 질의는 게이트로 내린다.
+  - column: "(전문투자자 전용 여부)"
+    value: "코드 의미 미제공(주최 확정)"
+    triggers: ["전문[ ]?투자자", "적격[ ]?투자자"]
+    reason: "pfiv_sale_cntl_tcd(판매통제구분코드)는 코드 의미 미제공 — '00' 8,912 · '01' 45 · '02' 12 의 뜻을 알 수 없어 전문투자자 전용 여부를 판정할 수 없음 (query_rules.전문투자자코드금지 를 게이트로 승격) → HCX 없이 즉답"
+    answer: "전문투자자만 살 수 있는 공모펀드는 이 데이터로 확정할 수 없습니다. 판매 대상을 제한하는 항목이 코드로만 수록되어 있고 각 코드의 의미가 제공되지 않아, 어느 값이 '전문투자자 전용'인지 해석할 수 없습니다. 개인·법인 전용 구분이나 퇴직연금·개인연금 가입 가능 여부는 조회해 드릴 수 있습니다."
+  # 🔴 2026-09-04 신설(FND-R02 실측) — 1주일 수익률(fd_wk1_ern_r)은 전건 NULL 인데, 말없이 1개월로
+  #    치환해 답했다(머리줄에 '1개월' 이라 적었으나 사용자는 자기 질문이 바뀐 걸 모른다).
+  #    answer_rules 에 규칙이 이미 있었고 지켜지지 않았다 — 상수(전건 NULL) 컬럼이라 게이트로 내린다.
+  - column: "(1주일 수익률)"
+    value: "전건 NULL"
+    triggers: ["(?:1[ ]?주일?|일[ ]?주일|주간|한[ ]?주)[^?]{0,8}수익률"]
+    reason: "fd_wk1_ern_r 은 전건 NULL — 1주일 수익률은 수록되지 않음. 다른 기간으로 말없이 치환하면 사용자는 질문이 바뀐 걸 모른다 → HCX 없이 즉답"
+    answer: "1주일 수익률은 이 데이터에 수록되어 있지 않습니다. 수록된 기간은 1개월·3개월·6개월·18개월·1년·2년·3년·5년 8개이며 모두 누적 기준입니다. 이 중 한 기간을 말씀해 주시면 순위나 개별 조회를 해 드리겠습니다."
+  - column: "(이자/배당 구분)"
+    value: "전건 '배당'"
+    triggers: ["이자형", "이자[ ]?배당[ ]?구분"]
+    reason: "int_dvd_desc 는 판매중·공모 8,969 전건 '배당' 인 상수 컬럼 — 이자/배당 구분이 성립하지 않음 (0개가 아니라 구분 불가) → HCX 없이 즉답"
+    answer: "이자형과 배당형의 구분은 이 데이터로는 할 수 없습니다. 이자·배당 구분 항목이 판매중인 공모펀드 8,969건 전부 '배당' 한 값으로만 되어 있어, 이자형이 0개인 것이 아니라 구분 자체가 성립하지 않습니다. 분배 관련해서는 최근 분배율로 분배가 있었는지 여부를 조회해 드릴 수 있습니다."
+
+# ── 답변 규칙 — compose_answer 에만 실린다 (loader.answer_context). 조회 결과를 **어떻게 말할지** ──
+# 2026-08-30 저녁 신설: columns.*.answer_policy 에 있던 규약은 답변 단계에 전달되지 않았다(채권 §3-H 와 같은 구멍).
+answer_rules:
+  - "여러 행을 나열할 때는 **조회 결과의 행 순서를 그대로 유지**한다 — 임의 재정렬은 랭킹 오답이다 (2026-09-01 FND-035 실측: 2위 값 235가 5위 자리로 밀려 나갔다). 순위 번호는 행 순서에서만 나온다."
+  - "수익률(fd_*_ern_r)은 전부 **누적** 수익률이다 — '3년 수익률 10.5%' 를 연 10.5% 로 말하지 않는다. 기간(1개월·3개월·6개월·18개월·1년·2년·3년·5년)을 명시한다."
+  - "기간 미지정 수익률 질의('수익률 좋은 펀드' 등)는 **1년 수익률(fd_yr1_ern_r) 기준으로 답하고**, 1년 기준임을 밝힌 뒤 답 끝에 '다른 기간(1·3·6·18개월, 2·3·5년) 수익률 기준을 원하시면 말씀해 주세요' 안내를 덧붙인다 — 되묻고 끝내지 않는다 (리드 결정 2026-08-31)."
+  - "답변에 실린 펀드 중 1년수익률 100% 초과 또는 태그(zrin_attr_nms)에 '레버리지'·'목표달성전환' 이 있으면 '누적 수익률이며 레버리지·전환형·기준가 변경으로 실제 투자 성과와 다를 수 있습니다. 위험등급과 기간을 함께 확인하세요.' 를 붙인다."
+  - "기점 오류 3클래스(KR5157450126·KR5153450511·KR5119470012)의 18개월 이상 수익률은 값을 답하되 '기준가 산정 오류가 의심되는 값' 임을 병기한다."
+  - "위험등급(zrin_fd_ivst_risk_gcd)은 제로인 평가 1~6등급으로 숫자가 **작을수록 위험**하다(1=매우높은위험, 6=매우낮은위험). 방향을 답에 밝힌다. 결측(422행)은 '평가 데이터가 제공되지 않았습니다' — '소규모라서'·'신규라서' 같은 사유를 지어내지 않는다."
+  - "보수(or_co_rwrd_r·sale_co_rwrd_r·trusc_rwrd_r·ofwk_trus_rwrd_r)는 **‰(천분율)** 이다 — 값÷10 이 %. 총보수 컬럼은 없으므로 네 항목의 합을 '총보수(4항목 합)' 로 말하고, 클래스마다 다르다는 점을 밝힌다."
+  - "랭킹·집계 답변은 펀드 단위 대표행이다 — 같은 펀드의 클래스가 여럿이면 '클래스 n개(예: A·C·Ce)' 를 병기하고 대표 클래스의 itm_no 를 적는다. 클래스 이름(han_clas_nm: 수수료선취/미징구·온라인/오프라인·퇴직연금)으로 어느 클래스인지 말한다."
+  - "🔴 순자산은 결과의 순자산_억원 값(예: '10249억원')을 그대로 옮겨 말한다 — 원 단위 13자리를 옮겨 적지 않고(자릿수 훼손 실측: 1조 249억 → '10,249,525,488원'), 단위를 바꿔 부르지도 않는다(십억·조 환산 금지 — '십억 원' 오표기 실측). 순자산_억원이 결과에 없으면 억 원으로 환산해 말한다."
+  - "최근 분배율(fd_last_dstb_r)은 분배 유무(>0 / =0)만 말한다. 수치·순위는 단위가 확정되지 않아 말하지 않는다."
+  - "기준가(bns_bpr)는 상품 간 크기 비교가 무의미하다(설정 시 1,000 기준) — 비교 요청이면 그 이유를 말하고 비교하지 않는다. 기준가를 말할 때는 fd_price_bas_dt 를 병기한다."
+  - "'1주 수익률' 질의는 '이 데이터셋에는 1주 수익률이 수록되지 않았습니다' 로 답한다(fd_wk1_ern_r 전건 결측). fd_prsv_r·fd_sbpr 로는 어떤 질의에도 답하지 않는다."
+  - "집계·Top-N 답변에는 모수(판매중·공모 8,969행)와 평가 기준일(fd_daily_bas_dt)을 병기한다. 기준일이 2026-08-22 보다 오래된 행이면 그 날짜를 그대로 말한다."
+  - "공모 펀드에도 역외펀드(ofsfd_yn=1) 110행이 있다 — '공모에는 역외펀드가 없다' 고 말하지 않는다. 사모(prvo_pbff_desc='사모')는 기본 모수 밖이며, 종목명의 '(사)'·'사모' 표기로 공모/사모를 판정하지 않는다."
+  - "종목명은 키가 아니다(45명칭 97행 중복) — 펀드를 특정할 때는 itm_no 를 함께 적는다. 영문명은 itm_eng_nm 이 실제 영문(한글 없음)일 때만 쓰고, 아니면 '영문명 미제공'."
+  - "🔴 데이터에 없는 항목을 답할 때 **그 이유를 지어내지 않는다** — '개인정보 보호법상 제한'·'비공개 정책'·'소규모라서'·'신규라서' 는 전부 근거 없는 날조다. '제공된 데이터에 <항목>이 수록되어 있지 않습니다' 로만 말하고, 대체 가능한 항목이 있으면 그것을 안내한다(예: 운용역 → 운용사). 2026-08-31 실측: 펀드매니저 질의에 개인정보 보호법을 사유로 지어냈다."
+  - "🔴 이름 부분일치로 **서로 다른 펀드**가 여럿 걸리면(예: 코어테크 / 차이나코어테크 / 글로벌코어테크EMP / 코어테크청년소득공제) 하나를 임의로 골라 대표로 말하지 않는다. 펀드별로 나눠 제시하고, 질문의 이름과 가장 정확히 일치하는 펀드를 먼저 놓는다. 각 펀드는 클래스 n개로 묶어 대표 클래스 itm_no 를 적는다 (2026-08-31 실측: 코어테크 질의에 글로벌코어테크EMP 값 17.41% 를 대표로 제시 — 본체는 188% 대)."
+  - "조회로 확정된 수치에 '더 정확한 정보는 해당 금융기관에 문의하세요' 같은 면책을 붙이지 않는다 — 데이터에서 센 값은 그 자체로 정확하다. 불확실성을 밝혀야 하는 것은 커버리지·기준일·모수이지 값이 아니다 (2026-08-31 실측: 정확한 집계 8,528 에 금융기관 문의 권유를 덧붙임)."
+  - "🔴 조회된 행을 임의로 생략하지 않는다 — 분포·목록 답변은 결과에 있는 **모든 행**을 옮긴다. 합계가 밝힌 모수와 다르면 그 차이를 설명한다. 전수를 조회하고도 '일부입니다'·'더 많을 수 있습니다' 라고 말하지 않는다 (2026-09-01 실측: 19개 유형 중 16개만 옮기고 합계 500 부족한 채 '일부' 라고 서술)."
+  - "조회 결과에 없는 펀드·수치를 예로 들지 않는다."
+  - "종목명에 '사모' 가 들어가도 조회 모수가 공모(prvo_pbff_desc='공모')면 **공모펀드**다 — '사모투자재간접형' 은 사모펀드에 재간접 투자하는 공모펀드라는 뜻이다. 이름만 보고 사모라고 말하지 않는다 (2026-08-31 실측: 공모 조회 결과를 '사모 헤지펀드' 로 소개)."
+  - "조회된 몇 행만 보고 '모든 펀드가 ~하다' 는 전칭 서술을 하지 않는다 — 결과는 WHERE 조건으로 걸러진 부분집합이다. 서술은 '조회된 N건 기준' 으로 한정한다 (2026-08-31 실측: 1등급 필터 5행을 보고 '모든 펀드가 매우 높은 위험' 오서술)."
+  - "🔴 질문이 두 부분이면 **둘 다 답한다** — 앞부분만 답하고 뒷부분을 넘기지 않는다. '몇 개고, 그중 …는 몇 개'·'0건인데 실제로는 어디야'·'몇 개야? 이미 청산된 거야?' 는 한 문항이다. 조회 결과에 뒷부분 근거가 없으면 없다고 말하되 질문 자체를 빠뜨리지 않는다. 질문이 'A까지 포함하면' 이라고 요구했으면 합산한 수를 반드시 제시한다 — A를 제외한 근거를 대는 것으로 갈음하지 않는다 (2026-09-04 실측: KG-005·X22·KG-031·DOM-07 4문항이 같은 실패)."
+  - "판매완료(sale_yn='판매완료')는 **신규 가입만 중단된 상태**다 — 청산·종료가 아니고 기존 투자자의 보유분은 그대로 남아 있다. 판매완료 건수를 답할 때 청산 여부를 물었으면 이 사실을 반드시 밝힌다 (columns.sale_yn.value_semantics 에서 이관, 2026-09-04 DOM-07)."
+  - "환헤지 여부(exchdg_yn)는 판매중·공모 8,969 중 **3,531건(39%)이 미수록**이다 — Y 개수만 답하면 나머지가 '환헤지 안 함' 으로 읽힌다. Y 3,688클래스 · N 1,750 · 미수록 3,531 을 함께 내고 결측률을 밝힌다. 국내 펀드는 환헤지가 '해당사항 없음' 이고 해외·혼합 펀드의 결측만 '확인할 수 없음' 이다 (columns.exchdg_yn.answer_policy 에서 이관, 2026-09-04 DOM-08)."
+  - "순자산 상위 결과가 대부분 MMF 면 **그 사실을 먼저 밝힌다** — 순자산 Top-N 은 법인 자금 파킹용 MMF(판매중·공모 138클래스, 최대 12.4조)가 지배한다. 사용자가 '규모가 큰 펀드' 를 물었을 때 MMF 목록만 내놓고 끝내지 않고, MMF 를 뺀 순위를 함께 내거나 포함 여부를 묻는다 (clarify.사람의_선택.규모_MMF포함 에서 이관, 2026-09-04 FND-C01)."
+  - "기준가(bns_bpr)로 상품의 좋고 나쁨을 판단하지 않는다 — 기준가는 설정 시 1,000 에서 출발해 누적된 값이라 **상품 간 크기 비교가 무의미하다**. '기준가 높은 순으로 좋은 펀드' 같은 질문은 그 전제가 틀렸음을 말하고 수익률·순자산 등 비교 가능한 축을 제안한다. 🔴 기준가 컬럼은 실재하므로 '그런 정보가 없다' 고 답하지 않는다 (columns.bns_bpr.answer_policy 에서 이관, 2026-09-04 FND-R03)."
+  - "보수는 결과의 총보수_퍼센트 값을 그대로 옮겨 말한다 — 마스터 보수 원값은 ‰(천분율)이라 % 기호를 붙이면 10배 틀린다 (2026-09-04 FND-005 실측: 0.015‰ 를 '0.015%' 로 표기). 결과에 총보수_퍼센트 가 없으면 네 항목 합을 10 으로 나눠 % 로 말하고, ‰ 원값과 % 를 함께 적을 때는 어느 쪽인지 밝힌다."
+  - "🔴 조회 결과가 0건일 때 그것이 **정상인 0인지 데이터 결손인지**를 밝힌다. 헤지펀드(hdge_fd_yn)는 공모 모수에서 0건이 정상이다 — 헤지펀드는 사모 영역이라 애초에 공모로 등록되지 않는다(PDF §2.3·§4.10). 숫자만 0이라고 하면 데이터가 빠진 것처럼 읽힌다. 공모로 살 수 있는 헤지 전략 상품은 사모투자재간접 공모펀드 형태로 따로 있다는 안내를 덧붙인다."
+  - "🔴 한 낱말이 **두 축으로 셀 수 있는** 질의는 어느 축으로 셌는지 답에 밝힌다 — '미국'은 지역 대분류(fd_ivst_rgn_desc '남미/북미' 114펀드)와 국가 태그(prfd_attr_cds 'USA' 98펀드)로 수가 갈린다. '국가 태그 기준입니다' 처럼 한 마디를 붙이고, 다른 축의 수를 알면 병기한다 (domestic_etfs 섹터테마질의와 같은 규약)."
+  - "🔴 조회 결과에 없는 **항목 자체를 서술하지 않는다** — 운용 전략·투자 방침·시장 전망은 마스터에도 설명서 수집분(ext_fund_page 20컬럼)에도 없다. 부인 문장('세부 전략은 확인할 수 없습니다')을 쓴 뒤 같은 답변에서 그 항목을 단정하는 것은 환각이다 (2026-09-04 OFFICIAL-002 실측: '전략은 확인 불가' 라고 쓰고 바로 앞줄에서 '국내 주식·채권 분산 투자로 안정적 수익 추구' 라고 단정, 끝에 '성장 가능성 높은 기업에 투자하는 목적' 까지 덧붙였다). 없는 항목은 부인만 하고 있는 축(유형·약관 분류·속성 태그)으로 대체 안내한다."
+
+# ── 역질문 분기 — 되묻기는 답변불가 문항의 정답 형태 중 하나 (주최 확인 8/25). 동반 신호가 있으면 되묻지 않는다 ──
+clarify:
+  다의어:
+    수익률: "기간 8종(1개월·3개월·6개월·18개월·1년·2년·3년·5년, 전부 누적) — 기간 미지정이면 **되묻지 말고** 1년(fd_yr1_ern_r)을 기본값으로 답하고 1년 기준임을 명시 + 다른 기간을 원하면 말해달라는 안내를 덧붙인다(리드 결정 2026-08-31, answer_rules 참조). '연평균'·'연환산' 을 물으면 데이터에 없다고 답한다."
+    보수: "운용(or_co)·판매(sale_co)·수탁(trusc)·사무관리(ofwk_trus) 4항목 / 총보수(4항목 합) — 미지정이면 총보수(합)로 답하고 항목별 값을 병기. 선취·후취 수수료는 보수가 아니라 클래스 정책(han_clas_fee_type)."
+    등급: "위험등급(zrin_fd_ivst_risk_gcd, 제로인 1~6) — 펀드에는 신용등급이 없다. '등급' 만 물으면 위험등급으로 답하고 그렇게 읽었음을 밝힌다."
+    펀드이름: >-
+      부분일치가 복수 클래스·복수 펀드에 걸리면 목록으로 되묻거나 클래스 n개로 묶는다 — 한 행을 임의로 고르지 않는다.
+      🔴 브랜드·운용사 이름만으로 '~펀드'(예: '삼성 펀드')를 물으면 수백 행이 걸린다(삼성 962행/236펀드) —
+      SQL 대신 "CLARIFY: '삼성' 이름의 펀드가 236개입니다. 특정 펀드명이나 유형(주식형·채권형·MMF 등)을 알려주시겠어요?"
+      처럼 되묻는다. 컬럼 정의를 나열하는 답은 금지.
+  사람의_선택:
+    규모_MMF포함: "'규모 큰 펀드' 는 순자산(fd_nast_suma) 상위가 MMF(138행 = MMF 108 + 외화 MMF 30, 그중 법인 100 — 최대 12.4조)로 채워진다 — MMF 를 포함할지 묻거나, 포함/제외 두 답을 나란히 낸다."
+    클래스: "같은 펀드라도 A(선취·판매보수 낮음)·C(수수료 미징구·판매보수 높음)·e(온라인)·P(연금) 클래스는 보수가 다르다 — '보수 낮은 펀드' 는 어느 클래스 기준인지 밝힌다(기본: 펀드 단위 대표행 + 클래스 병기). A/C 유불리는 투자 기간의 문제 — 장기=A·단기=C 조건부로 답하거나 기간을 되묻는다(실측: 쌍 보유 121펀드 전부 A 판매보수 < C)."
+    안전의_정의: "위험등급 6등급(매우낮은위험) → MMF·채권형 / 원금보존추구 태그 — 둘은 다른 개념이다."
+
+entities:
+  FundClass:
+    kind: entity
+    role: 주 노드
+    source: itm_no
+    count: 23676
+    label: itm_nm
+    note: >-
+      판매 단위(클래스) = 행. 2차 75컬럼 중 관계 컬럼을 뺀 전부가 여기 붙음. 공모 14,716 · 판매중 10,962.
+      🔴 2026-08-30 — **KG 에 FundClass 노드는 없고 `belongsToFund` edge 도 0건이다. 이것은 결함이 아니라 설계다** —
+      클래스→묶음 관계를 마스터 컬럼 `rptt_ksd_itm_no` 가 이미 담고 있어 23,676 노드와 edge 를 중복 생성하지 않는다
+      (`gen_fund_structure_auto.py` docstring). 클래스 단위 조회·집계는 KG 가 아니라 `itm_no` 로 한다.
+  Fund:
+    kind: entity
+    source: (or_co_xtn_itt_cd, mtco_itm_no) 합성키
+    count: 14467                 # 2026-08-31 원값 기준(zero-pad 시 14,409). 구 14,522 는 규칙 ④ 미적용 시점
+    label: null
+    relation: FundClass -belongsToFund-> Fund
+    note: >-
+      '모펀드' 가 아니다 — 클래스를 걷어낸 '펀드' 단위(운용사 내부 관리 단위). 모자형 모펀드는 이 테이블에 없다(1차 판정 유지).
+      순자산은 이 단위 MAX. 🔴 count 14,467 은 더미 배제 후 원값 기준·사모 포함 — 판매중 4,340 (zero-pad 기준 14,409 · 4,305, 2026-08-31).
+      🔴 **이름 충돌 주의 (2026-08-30 F-2 판정: 이름 유지 · note 로 명시)** —
+      여기의 Fund(운용 단위, `(or_co_xtn_itt_cd, mtco_itm_no)` 14,467)와 **KG 의 Fund 노드는 다른 축**이다.
+      KG `node_type='Fund'` 7,600 = `rptt_ksd_itm_no` 묶음 6,883 + 마스터 밖 MotherFund 717
+      (`shared/fund_structure_auto.yaml`). 집계·순자산은 `(or_co, mtco)` 기준, KG 개체 조회는 `rptt` 기준으로 읽을 것.
+      개체를 분리(ManagementFund/KsdFund/FundClass)하지 않는 이유 — 제출물 `.ttl` 클래스명과 제안서 도해가 함께 바뀌는데,
+      이 충돌이 현재 오답을 만들고 있지 않다. 분리 검토 이력은 `공모펀드_검토_결정대기_2026-08-29.md` §3.
+    용어규칙: mtco 단위는 '펀드'. '모펀드' 는 모자형에만 쓰고 이 테이블에는 없다고 명시할 것
+  ShareClass:
+    kind: entity
+    source: itm_nm 파싱(종류X/클래스X) + han_clas_nm
+    count: 195
+    relation: FundClass -hasShareClass-> ShareClass
+    note: >-
+      🆕 2차 han_clas_nm(195종)이 클래스 체계를 직접 준다 — itm_nm 파싱(1차 112종 어휘)은 결측 보조로 강등.
+      FIBO FundShareClassUnit 대응. 종류/클래스 표기 종목 5,261.
+  AssetManager:
+    kind: entity
+    source: or_co_xtn_itt_cd
+    count: 275
+    label: null
+    relation: Fund -managedBy-> AssetManager  (FIBO hasManagementCompany)
+    note: 🔴 이름 컬럼 없음 — 코드북 ontology/codebooks/asset_manager.csv(1차 67종) 를 275종(판매중 226)으로 확장 필요
+  Custodian:
+    kind: entity
+    source: trusc_xtn_itt_cd
+    count: 50
+    label: null
+    relation: Fund -custodiedBy-> Custodian  (FIBO hasDepository)
+    note: 🔴 이름 컬럼 없음 — 코드북 trustee.csv(1차 18종) 50종으로 확장 필요
+  Benchmark:
+    kind: entity
+    source: bmrk_nm
+    count: 389
+    label: bmrk_nm
+    relation: FundClass -benchmarkedTo-> Benchmark  (FIBO definesBenchmark)
+    note: 복합식 파싱 전제. 국내ETF ref_base_index(2차 905종)와 교차하면 '같은 지수 추종 펀드·ETF' 질의 가능 — 표기 매핑 필요
+  Country:
+    kind: entity
+    source: prfd_attr_cds 의 ISO 3자 태그 (17종) + fd_estb_ctry_cd(설립국 7종)
+    count: 17
+    relation: FundClass -investsIn-> Country · Fund -establishedIn-> Country
+    note: >-
+      투자국(태그)과 설립국(코드)은 다른 관계. 태그 17종: AUS BRA CHN DEU ESP FRA GBR HKG IDN IND JPN KOR MYS RUS TWN USA VNM.
+      태그가 없다고 그 나라에 투자 안 하는 게 아님 — zrin_ptn_nm('중국주식' 등)·W축 태그와 병용하고 모수 명시.
+  FundAttribute:
+    kind: entity
+    source: prfd_attr_cds 의 <문자><3자리숫자> 태그 (210종 · 축 15)
+    count: 210
+    label: zrin_attr_nms
+    relation: FundClass -hasAttribute-> FundAttribute
+    coverage: 태그 보유 11,280/23,676 (판매중 8,550/10,962)
+    axis_count: 15
+    note: >-
+      1차 EAV 판정 유지 — 문자=축, 숫자=축 안의 값. 🆕 2차는 zrin_attr_nms 로 **명칭이 제공**되어 축 해독의 근거가 생겼다
+      (단 순서 불일치 — columns.prfd_attr_cds.trap). 축별 값 수는 1차와 동일: C4 D5 E3 F7 G15 M16 N60 O10 P10 Q5 R10 S16 T11 V3 W35.
+      교집합만으로 유일 확정된 20종: C102=단위 C103=개방 D102=국내위탁판매 D106=온라인전용 M101=목표달성전환 M109=자펀드
+      M111=종류형 클래스펀드 M112=FoFs P104=중소형주 R107=하이일드 S108=롱/숏 S117=레버리지 V101=국내 V102=국외 V103=국내외
+      W101=글로벌 W104=북미 W106=아태 (+USA=미국 VNM=베트남). 전량 `ontology/codebooks/fund_attr_code.csv` 로 도출 완료 (2026-08-25).
+    decode_status: 1차 15축 중 대응 확정 4(V·S·N·G)·부분 8·없음 3 → 2차 명칭 컬럼으로 전면 재해독 가능(미실시)
+
+class_hierarchy:
+  note: FIBO 원칙 — 펀드 유형은 owl:Class 하위클래스이지 개체가 아님. axis_fundType(주최 측 제시)이 법적 5분류 층위와 일치.
+  Fund:
+    SecuritiesFund:
+    - EquityFund
+    - BondFund
+    - EquityMixedFund
+    - BondMixedFund
+    MoneyMarketFund: []
+    MixedAssetsFund: []
+    RealEstateFund: []
+    SpecialAssetsFund: []
+
+axis_mapping:
+  _note: >-
+    주최 측이 1차 schema.xlsx Sheet2_Sample 로 제시한 6축. 2차 schema 파일엔 샘플 시트가 없다 — 1차 정답 라벨 100건 기준 판정 유지.
+    🔴 derivation_rules.assetClass 와 층위가 다르다 — fundType 은 자본시장법 5분류, assetClass 는 실제 투자자산 축. 합치지 말 것.
+  axis_fundType:
+    출처: or_attr_desc
+    evidence_grade: A(1차 정답 100건)
+    매핑:
+      SecuritiesFund: ['주식형', '채권형', '주식혼합', '채권혼합', '재간접', '파생상품', null]
+      MoneyMarketFund: ['MMF']
+      MixedAssetsFund: ['혼합자산']
+      RealEstateFund: ['임대형', '대출형', '개발형']
+      SpecialAssetsFund: ['특별자산']
+    주의: >-
+      '파생상품' 은 1차의 '06'. '개발형'(88행)·'기타'(170)·'해당없음'(905) 은 2차 신규 값 — 개발형 88 = 전부 사모(zrin 유형 NULL, 검수 C 2026-08-25)라 공모 모수엔 없음: 부동산 배정은 명칭 관행 추정으로 유지하되 답변엔 등장하지 않음. '해당없음' 905(전부 공모 판매완료)·'기타' 170(사모 169 — 판매중 105 포함 — 공모 판매완료 1; 2026-09-02 정정)은 미배정(모수에서 명시).
+  axis_investorEligibility:
+    출처: prvo_pbff_desc
+    evidence_grade: A
+    매핑:
+      PublicOffering: ['공모']
+      PrivateOffering: ['사모']
+  axis_listingType:
+    출처: itm_nm (종목명 파싱)
+    evidence_grade: A
+    규칙: "itm_nm LIKE '%상장지수%' → Listed (236행) · 그 외 Unlisted"
+  axis_redemptionType:
+    출처: zrin_attr_nms                      # 🆕 2차 — 태그 '개방'(C103) / 1차 설명서 전건 개방형과 정합
+    evidence_grade: A(태그 보유분)
+    규칙: "',' || zrin_attr_nms || ',' LIKE '%,개방,%' → OpenEnded. '폐쇄' 태그(C104)는 195행(판매중 6) 실재 — ',' || zrin_attr_nms || ',' LIKE '%,폐쇄,%' → ClosedEnded (2026-09-02 정정; synonyms 폐쇄형→폐쇄 와 정합). 태그 없는 12,396행은 '확인 불가'"
+  axis_issuanceType:
+    출처: fd_set_pcd (+ zrin_attr_nms '추가'/'단위' 태그로 교차 검증 가능)
+    evidence_grade: A
+    매핑:
+      AdditionalType: ['10']
+      UnitType: ['20']
+    근거: 1차 설명서 전수 교차 반례 0. ✅ 검수 C 2026-08-25 — 태그 C101=추가·C102=단위 는 codebooks/fund_attr_code.csv 검증률 1.0 으로 확정, fd_set_pcd 와 교차 — '10' 행 중 C101 10,533·C102 35 / '20' 행 중 C102 587·C101 15 (태그 보유분 기준 정합 '10' 99.7%·'20' 97.5% — 2026-09-02 재계수). '00' 1,967 = 미기재 레거시(태그 없음 1,857) → '확인 불가'.
+  _미확정:
+    axis_classDifferentiation: >-
+      1차 정답 라벨이 같은 펀드 안에서 갈렸던 축. 🆕 2차 han_clas_nm 이 있으므로 "han_clas_nm 보유 = MultiClass 후보" 로 재정의 가능.
+      검수 C 2026-08-25 실측: 종류형 태그(M111) 보유 10,510행 중 han_clas_nm 있음 9,247(88.0% — 2026-09-02 정정; 옛 9,637 은 han_clas_nm 보유 행수) · 판매중·공모·M111 중 결측 14행뿐 → 기본값 규칙 "M111 태그 OR han_clas_nm 보유 = MultiClass" 로 운용하고, 주최 정의(축 이름) 는 안건 1-9 와 함께 확인. 답변엔 "클래스 구분 있음/없음" 까지만.
+
+derivation_rules:
+  _note: 🔴 or_attr_desc 는 단일 축이 아님 — 자산군·운용구조·파생활용 3축 압축(1차 판정 유지). 2차는 zrin_btyp_nm 이 자산군 1순위 축이다.
+  assetClass:
+    축: 무엇에 투자하는가 (하위클래스 결정)
+    규칙: ① zrin_btyp_nm(18종, 국내/해외 내장) ② 없으면 종목명 괄호 표기 — (주식…)→Equity, (채권…)→Bond, (주식혼합…)→EquityMixed, (채권혼합…)→BondMixed ③ 없으면 or_attr_desc 폴백
+    판정률: 미산출(2차) — zrin_btyp_nm 보유 11,281/23,676 · 판매중 8,551/10,962
+  isFundOfFunds:
+    축: 운용 구조 (자산군과 직교)
+    규칙: "zrin_attr_nms 태그 'FoFs'(M112) 또는 종목명 '재간접' 또는 or_attr_desc='재간접' (보조: zrin_fd_cmst_rt 가 높음)"
+  usesDerivatives:
+    축: 파생 활용 (직교)
+    규칙: 종목명에 '파생' 또는 or_attr_desc='파생상품'
+    해당: 2302 이상(or_attr_desc 기준)
+  isMasterFeeder:
+    축: 모자형 구조 (직교)
+    규칙: zrin_attr_nms 태그 '자펀드'(M109) > 종목명 '증권자'/'자투자신탁' 패턴 > 1차 설명서 플래그(external_facts.is_masterfeeder)
+  totalFeeApprox:
+    축: 총보수 근사 (%)
+    규칙: (or_co_rwrd_r + sale_co_rwrd_r + trusc_rwrd_r + ofwk_trus_rwrd_r) / 10
+    주의: 🔴 기타비용(매매·중개수수료 등) 미포함 — 설명서 TER(ext_fund_page.total_fee_pct)보다 작을 수 있다. 답변에 "보수 합계 기준, 기타비용 제외" 를 명시. 보수_3종전부0 행은 제외.
+  prfdAttrTag:
+    축: prfd_attr_cds 한 컬럼에 2종류가 섞여 있음 — 형태로 갈라야 한다
+    규칙: ① ISO 3자 대문자 → Country (investsIn)  ② <문자><3자리숫자> → FundAttribute (문자=축, 숫자=값)
+    판정률: 태그 227종 = 17 + 210 (100%). 1차의 오염 '해외' 태그는 2차에 없음
+    note: 2차에서는 행을 가르지 않는다(목록 컬럼). FundClass 의 다중값 관계로 모델링.
+
+attributes:
+  식별:
+  - std_itm_no
+  - ksd_itm_no
+  - fss_itm_no
+  - rptt_ksd_itm_no
+  이름:
+  - itm_abrv_nm
+  - itm_eng_nm
+  - itm_eabrv_nm
+  - bmrk_eng_nm
+  성과:
+  - fd_wk1_ern_r
+  - fd_mm1_ern_r
+  - fd_mm3_ern_r
+  - fd_mm6_ern_r
+  - fd_yr1_ern_r
+  - fd_mm18_ern_r
+  - fd_yr2_ern_r
+  - fd_yr3_ern_r
+  - fd_yr5_ern_r
+  규모가격:
+  - fd_nast_suma
+  - bns_bpr
+  - fd_sbpr
+  - fd_daily_bas_dt
+  - fd_price_bas_dt
+  위험:
+  - zrin_fd_ivst_risk_gcd
+  - zrin_fd_ivst_risk_grd_nm
+  보수:
+  - or_co_rwrd_r
+  - sale_co_rwrd_r
+  - trusc_rwrd_r
+  - ofwk_trus_rwrd_r
+  - fd_prsv_r
+  분배:
+  - fd_last_dstb_r
+  - fd_last_dstb_actg_bss_dt
+  - fd_last_dstb_actg_eot_dt
+  자산구성:
+  - zrin_dmst_stk_cmst_rt
+  - zrin_dmst_bd_cmst_rt
+  - zrin_ovrs_stk_cmst_rt
+  - zrin_ovrs_bd_cmst_rt
+  - zrin_fd_cmst_rt
+  - zrin_liqt_cmst_rt
+  - zrin_etc_ast_cmst_rt
+  유형:
+  - zrin_btyp_cd
+  - zrin_btyp_nm
+  - zrin_pcd
+  - zrin_ptn_nm
+  - ovrs_fd_desc
+  - fd_ivst_rgn_desc
+  - kofia_fd_ccd
+  - prvo_fd_desc
+  - prvo_pbff_desc
+  - pers_corp_desc
+  - int_dvd_desc
+  - fd_set_pcd
+  속성태그:
+  - prfd_attr_cnt
+  - prfd_attr_search_text
+  - zrin_attr_nms
+  클래스:
+  - han_clas_nm
+  - han_clas_fee_type
+  - han_clas_sales_channel
+  - han_clas_policies
+  거래판매:
+  - sale_yn
+  - thco_sale_yn
+  - pfiv_sale_cntl_tcd
+  - exchdg_yn
+  - frc_bpr_itm_yn
+  - hdge_fd_yn
+  - ofsfd_yn
+  - curr_cd
+  _note: 엔티티로 세우지 않고 FundClass 의 속성으로 두는 컬럼. 배정 검증(gen_entity_map)이 이 블록을 함께 봐야 '전 컬럼 배정' 이 성립한다
+
+cross_domain:
+  _note: 다른 상품군과의 연결. 교차질의(주최 확정 — 한 호출에서 복수 테이블)의 재료.
+  상장지수_중복:
+    발견: 종목명 '상장지수' 236행(2차) — domestic_etfs 와 중복 가능. 1차엔 62종목 중 23종이 ETF 마스터에도 존재
+    조인: 🔴 itm_no ∩ pd_itm_no = 0건(1차). 종목명(공백제거) 일치로만 — 2차 재대조 미실시
+    영향: 두 테이블을 합치면 이중 계상. 교차 Top-N 에서 query_rules.ETF제외 적용 후 ETF 마스터 쪽을 채택
+  식별자_대역:
+    public_funds: KR51 · KR50 · KR55 · KR52 · K55x(std)
+    domestic_bonds: KR60 · KR35 · KR64 · KR61
+    domestic_etfs: KR74 · KRG5 · KR70 · KR72
+    note: ISIN 12자리 접두 대역이 겹치지 않아 직접 조인 불가. 앞 4자리로 상품군 판별 가능
+  벤치마크_교차: bmrk_nm(389종) ↔ domestic_etfs.ref_base_index(905종) — 표기 체계 상이, 지수명 정규화 매핑 필요(codebooks/index_master 재작성 대상)
+  수익률_교차: fd_yr1_ern_r(누적 1년) ↔ domestic_etfs.du_er_1y — 둘 다 1년이나 산출 주체·기준일이 다름. 해외ETF는 1년수익률 컬럼 없음(du_er_1d 뿐) → 교차 TOP-N 에서 "미수록·제외" 명시
+  수탁사: trusc_xtn_itt_cd(50종)에 대응하는 컬럼이 다른 3개 테이블에 없음 — 공모펀드 전용 관계
+
+# ── 외부 문서 추출 사실 — 2026-08-20 간이투자설명서 R3 전수 (1차 판매중 8,443건) ──
+external_facts:
+  source: data/external/lookups/fund_facts_from_prospectus.csv
+  coverage: "1차 판매중 8,445종목 중 8,443 — 2차 판매중 10,962(사모 포함)와 모수가 다르다. itm_no 로 조인해 붙는 만큼만 사용"
+  제약: "발행 시점 불변 사실만 사용 — 시계열 수치 인용 금지. 🔴 주최 데이터 우선: 마스터에 값이 있으면 마스터, 없을 때만 설명서"
+  위상_2026-08-25: >-
+    2차 마스터가 보수 4종·개방/단위·자펀드 태그를 직접 제공하므로 이 파일은 (a) 보수 단위 확정용 대조 자료
+    (b) 마스터 결측분 보완 (c) 총보수(TER)·환매수수료 등 마스터에 없는 항목 — 로 강등. (a)는 2026-08-25 완료.
+  columns:
+    redemption: "개방형/폐쇄형 — 2차 태그 '개방'(C103)과 교차 검증용"
+    issuance: "추가형/단위형 — fd_set_pcd·태그 C102 와 교차"
+    is_masterfeeder: "문서 '모자형' 표기 — 태그 M109(자펀드) 보완용"
+    fee_total_pct: >-
+      클래스별 총보수(근사). ✅ 단위 대조 완료(2026-08-25, ext_fund_page 8,925건 — 비율 10.0) — 이제 "간이투자설명서 기재 총보수(TER)" 보완 인용 전용.
+      마스터 4종 합÷10(derivation_rules.totalFeeApprox)은 기타비용 미포함이므로 TER 질의에는 이 값을 병기.
+
+# ── 부재 속성 선언 (2026-09-02 KG 1R S5) — 도메인 문서 §5 "답할 수 없는 것" 의 각 행 = ttl ABSENT 1건 = 게이트 어휘 1건.
+#    build_ontology 가 fund_pub.ttl 에 `# ABSENT:` 로 사영하고, gate 가 vocab(정규식)으로 HCX 0회 즉답한다.
+#    🔴 좌수 환각(KG-027: fd_set_pcd '10' 을 "10좌" 로 단언)의 결정층. 대체 안내는 **있는** 컬럼만 적는다.
+#    기준가(bns_bpr)는 있다 — ABSENT 는 '추이·변동' 어휘에만 걸고 '기준가 얼마' 는 답한다.
+absent_properties:
+  # 🔴 2026-09-04 신설(OFFICIAL-002 실측) — '세부 전략은 확인할 수 없습니다' 라고 부인해 놓고
+  #    바로 앞줄에서 '국내 주식·채권 분산 투자로 안정적 수익 추구' 라고 단정했다. 부인과 단정이 한 답변에 공존 = 환각.
+  #    🔴 vocab 이 부정선행인 이유 — 게이트는 질문 단위 전부-아니면-전무다(gate.check ①-0 즉시 return).
+  #    OFFICIAL-002 는 "구조와 투자전략" 복합 질문이라 통째로 걸면 답할 수 있는 구조·보수·환매(ext_fund_page)까지 죽는다.
+  #    답할 수 있는 축이 함께 물린 질문은 게이트하지 않고 SQL 을 돌린다 — 그 경로는 answer_rules 가 잡는다.
+  - property: hasInvestmentStrategy
+    why: "펀드의 운용 전략·투자 방침 서술은 마스터에도 설명서 수집분(ext_fund_page)에도 수록되어 있지 않아 답할 수 없습니다."
+    vocab: ["^(?!.*(?:구조|보수|수수료|환매|설정일|클래스|모펀드|수익률|순자산)).*(?:투자[ ]?전략|운용[ ]?전략|운용[ ]?방침|전략[ ]?동향)"]
+    substitute: {column: "zrin_btyp_nm·or_attr_desc·prfd_attr_cds", note: "펀드 유형(주식형·채권형 등)·약관 분류(재간접·파생상품)·투자 국가 태그는 안내할 수 있습니다."}
+  - property: hasUnitsOutstanding
+    why: "공모펀드 마스터·설명서 수집분 어디에도 좌수(설정 좌수·잔존 좌수·잔고 좌수) 컬럼이 없어 좌수는 답할 수 없습니다."
+    vocab: ["좌[ ]?수", "설정[ ]?좌", "잔존[ ]?좌", "잔고[ ]?좌"]
+    substitute: {column: "fd_nast_suma·bns_bpr", note: "규모는 순자산(fd_nast_suma), 가격은 기준가(bns_bpr, 기준일 단일 스냅샷)로 안내할 수 있습니다."}
+  - property: hasFundManager
+    why: "펀드 운용역(펀드매니저) 정보는 마스터·설명서 수집분에 없어 답할 수 없습니다."
+    vocab: ["운용역", "펀드[ ]?매니저", "운용[ ]?인력", "책임[ ]?운용"]
+    substitute: {column: "or_co_xtn_itt_cd", note: "운용사(운용회사 코드 → 법인명)는 안내할 수 있습니다."}
+  - property: hasNavHistory
+    why: "기준가는 기준일 단일 스냅샷(bns_bpr)만 있고 시계열(추이·변동·과거 기준가)은 수록되어 있지 않습니다."
+    vocab: ["기준가[ ]?(?:추이|변동(?!성)|흐름|변화|이력|그래프|히스토리)", "과거[ ]?기준가"]
+    substitute: {column: "bns_bpr", note: "기준일 현재 기준가와 기간 수익률(1개월~5년 누적)은 안내할 수 있습니다."}
+  - property: hasHoldingsHistory
+    why: "보유 종목은 설명서 수집 기준일 1시점(ext_fund_holdings)만 있고 시계열(변화·추이)은 수록되어 있지 않습니다."
+    vocab: ["(?:보유|구성|편입)[ ]?종목.{0,8}?(?:추이|변동(?!성)|변화|이력|히스토리)"]
+    substitute: {column: "ext_fund_holdings", note: "수집 기준일의 보유 종목·비중은 안내할 수 있습니다."}
+
+# ── 국가어 통칭 (KG 1R S3) — Ground 보조 키(_synonym_keys): 통칭 → Country 노드 라벨. 값 동의어이며 컬럼명이 아니다.
+synonyms:
+  차이나: 중국
+  재팬: 일본
+  인디아: 인도
+  아메리카: 미국
+  # 설정형태 축(FundAttribute C) 어휘 규칙 — 사용자 낱말 = 코드북 이름 + '형' (KG 1R R11). 라벨 2자('개방')는 Ground 하한 미만이라 통칭으로 잇는다
+  개방형: 개방
+  폐쇄형: 폐쇄
+  단위형: 단위
+  추가형: 추가

@@ -1,0 +1,14 @@
+# 주최 제공 데이터·산출 DB 는 배포 금지 — 저장소에 넣지 않는다
+1.금융상품/
+*.xlsx
+*.db
+*.pdf
+*.docx
+*.zip
+data/external/
+data/*.db
+secrets/
+.env
+__pycache__/
+*.pyc
+.venv/
