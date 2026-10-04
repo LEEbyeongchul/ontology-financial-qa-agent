@@ -8,7 +8,7 @@
 
 | 항목 | 값 |
 | :-- | :-- |
-| Base URL | `https://49.50.134.229.nip.io` (▶ 리드 확인 — `07_리드_공통절.md` §0.2 기준. HTTP 80 도 열려 있음) |
+| Base URL | `https://<공인IP>.nip.io` (▶ 리드 확인 — `07_리드_공통절.md` §0.2 기준. HTTP 80 도 열려 있음) |
 | 질의 | `GET /answer?question_id=<id>&question=<urlencoded 질문>` — 경로 고정 |
 | 상태 확인 | `GET /health` → `{"status":"ok","agent_ready":true,"planner":"hcx","version":"<app.version>"}` |
 | 인증 | 없음(주최 발신 IP 허용 방식). POST 바디 없음. 미정의 파라미터는 무시 |
@@ -18,7 +18,7 @@
 ## 2. 요청
 
 ```bash
-curl -sG "https://49.50.134.229.nip.io/answer" \
+curl -sG "https://<공인IP>.nip.io/answer" \
   --data-urlencode "question_id=Q-001" \
   --data-urlencode "question=현재 판매 가능한 원화채권 중 AA- 이상 종목 알려줘"
 ```

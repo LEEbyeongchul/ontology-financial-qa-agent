@@ -54,6 +54,8 @@ services:
     environment:
       # .env 의 SITE_ADDRESS=<공인IP>.nip.io
       SITE_ADDRESS: ${SITE_ADDRESS}
+      # HTTP 80 을 공인 IP 로 직접 받을 때 쓰는 주소 (.env 의 SITE_IP)
+      SITE_IP: ${SITE_IP}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data # 🔴 인증서. 절대 삭제 금지

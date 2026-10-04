@@ -27,7 +27,7 @@
 #   · 서버 .env 에 HYPERCLOVA_API_KEY · SITE_ADDRESS 가 들어 있다
 set -euo pipefail
 
-IP="${MIRAE_IP:-49.50.134.229}"
+IP="${MIRAE_IP:?MIRAE_IP(서버 공인 IP)를 환경변수로 지정하세요}"
 # 🔴 SSH 로그인 키는 deploy_key 입니다 (authorized_keys 에 등록된 것 = claude-deploy@mirae).
 #    mirae-api-key.pem 은 NCP 콘솔에서 root 비밀번호를 복호화하는 용도라 SSH 인증에는 쓰이지 않습니다
 #    — 그걸로 붙으면 Permission denied (2026-08-26 실측).

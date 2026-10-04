@@ -13,16 +13,16 @@
 
 | 항목 | 값 |
 | :-- | :-- |
-| **엔드포인트** | **`https://49.50.134.229.nip.io/answer`** |
+| **엔드포인트** | **`https://<공인IP>.nip.io/answer`** |
 | 메서드 | `GET /answer?question_id=<문항ID>&question=<URL 인코딩한 질문>` |
 | 프로토콜 | HTTPS(Let's Encrypt) · **HTTP 80 도 같은 경로로 직접 응답** |
 | 인증 | 없음 |
-| 상태 확인 | `https://49.50.134.229.nip.io/health` |
+| 상태 확인 | `https://<공인IP>.nip.io/health` |
 
 응답은 항상 **HTTP 200 + 5필드 JSON**이며 모든 값이 문자열이다. 답할 수 없는 질의도 같은 형식으로 돌려준다.
 
 ```bash
-curl -sG "https://49.50.134.229.nip.io/answer" \
+curl -sG "https://<공인IP>.nip.io/answer" \
   --data-urlencode "question_id=Q1" \
   --data-urlencode "question=국고채는 총 몇 종목이야?"
 ```
